@@ -1,15 +1,35 @@
 {
   "packages": [
     {
-      "source": "git:github.com/HazAT/pi-interactive-subagents",
-      "extensions": [],
+      "source": "git:github.com/dgabka/pi-interactive-subagents",
+      "extensions": [
+        "-pi-extension/subagents/index.ts"
+      ],
       "skills": []
+    },
+    {
+      "source": "npm:pi-subagents@0.46.0",
+      "autoload": false,
+      "prompts": [
+        "-prompts/parallel-review.md",
+        "-prompts/review-loop.md",
+        "-prompts/parallel-research.md",
+        "-prompts/parallel-cleanup.md",
+        "-prompts/gather-context-and-clarify.md"
+      ],
+      "skills": [
+        "-skills/pi-subagents/SKILL.md"
+      ],
+      "extensions": [
+        "-index.ts"
+      ]
     }
   ],
   "extensions": [
     "../pi-extension/subagents/index.ts"
   ],
   "skills": [
-    "./skills/run-integration-tests/SKILL.md"
+    "./skills/run-integration-tests/SKILL.md",
+    "-skills/release/SKILL.md"
   ]
 }
