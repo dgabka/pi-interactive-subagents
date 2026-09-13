@@ -1,29 +1,24 @@
 /**
- * Integration tests for the multiplexer surface layer.
+ * Integration tests for tmux pane operations.
  *
- * These tests exercise real mux operations: creating panes,
+ * These tests exercise creating panes,
  * sending commands, reading screen output, and closing surfaces.
  * No LLM calls — fast and free.
  *
- * Run inside a supported multiplexer:
- *   cmux bash -c 'npm run test:integration'
+ * Run inside tmux:
  *   tmux new 'npm run test:integration'
- *   zellij --session pi  # then run: npm run test:integration
  */
-import { describe, it, before, after } from "node:test";
+import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { unlinkSync } from "node:fs";
 import {
-  getAvailableBackends,
-  setBackend,
-  restoreBackend,
+  isTmuxSession,
   createTestEnv,
   cleanupTestEnv,
   createTrackedSurface,
   createTrackedSurfaceSplit,
   focusSurface,
   getFocusedSurface,
-  getSurfacePane,
   waitForFocusedSurface,
   untrackSurface,
   sendCommand,
@@ -40,51 +35,33 @@ import {
   type TestEnv,
 } from "./harness.ts";
 
-const backends = getAvailableBackends();
 const FOCUS_TEST_SHELL_READY_DELAY_MS = Number(process.env.PI_SUBAGENT_SHELL_READY_DELAY_MS ?? "2500");
 
-if (backends.length === 0) {
-  console.log("⚠️  No mux backend available — skipping mux-surface integration tests");
-  console.log("   Run inside cmux or tmux to enable these tests.");
-}
-
-for (const backend of backends) {
-  describe(`mux-surface [${backend}]`, { timeout: 60_000 }, () => {
-    let prevMux: string | undefined;
+describe("tmux-pane", { timeout: 60_000, skip: !isTmuxSession() }, () => {
     let env: TestEnv;
 
-    before(() => {
-      prevMux = setBackend(backend);
-      env = createTestEnv(backend);
+    beforeEach(() => {
+      env = createTestEnv();
     });
 
-    after(() => {
+    afterEach(() => {
       cleanupTestEnv(env);
-      restoreBackend(prevMux);
     });
 
     it("keeps focus on the active surface while creating and targeting subagent surfaces", async () => {
       const anchor = createTrackedSurfaceSplit(env, "focus-anchor", "right");
       await sleep(1000);
 
-      focusSurface(backend, anchor);
-      await waitForFocusedSurface(backend, anchor, 10_000);
+      focusSurface(anchor);
+      await waitForFocusedSurface(anchor, 10_000);
 
       const childA = createTrackedSurface(env, "focus-child-a");
       await sleep(FOCUS_TEST_SHELL_READY_DELAY_MS);
-      assert.equal(getFocusedSurface(backend), anchor);
+      assert.equal(getFocusedSurface(), anchor);
 
       const childB = createTrackedSurface(env, "focus-child-b");
       await sleep(FOCUS_TEST_SHELL_READY_DELAY_MS);
-      assert.equal(getFocusedSurface(backend), anchor);
-
-      if (backend === "cmux") {
-        const paneA = getSurfacePane(backend, childA);
-        const paneB = getSurfacePane(backend, childB);
-        assert.ok(paneA, `Expected pane ref for ${childA}`);
-        assert.ok(paneB, `Expected pane ref for ${childB}`);
-        assert.equal(paneB, paneA);
-      }
+      assert.equal(getFocusedSurface(), anchor);
 
       const markerA = uniqueId();
       const markerB = uniqueId();
@@ -95,7 +72,7 @@ for (const backend of backends) {
         waitForScreen(childA, new RegExp(`FOCUS_A_${markerA}`), 20_000, 50),
         waitForScreen(childB, new RegExp(`FOCUS_B_${markerB}`), 20_000, 50),
       ]);
-      assert.equal(getFocusedSurface(backend), anchor);
+      assert.equal(getFocusedSurface(), anchor);
     });
 
     it("creates a surface, sends a command, reads output, and closes it", async () => {
@@ -239,5 +216,4 @@ for (const backend of backends) {
       const content = await waitForFile(byteFile, 15_000, /^27$/);
       assert.equal(content.trim(), "27");
     });
-  });
-}
+});

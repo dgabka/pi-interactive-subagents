@@ -1,6 +1,6 @@
 # pi-interactive-subagents
 
-Async subagents for [pi](https://github.com/badlogic/pi-mono) — spawn, orchestrate, and manage sub-agent sessions in multiplexer panes. **Fully non-blocking** — the main agent keeps working while subagents run in the background.
+Async subagents for [pi](https://github.com/badlogic/pi-mono) — spawn, orchestrate, and manage sub-agent sessions in tmux panes. **Fully non-blocking** — the main agent keeps working while subagents run in the background.
 
 https://github.com/user-attachments/assets/30adb156-cfb4-4c47-84ca-dd4aa80cba9f
 
@@ -29,26 +29,11 @@ subagent({ name: "Scout: DB", agent: "scout", task: "Map database schema" });
 pi install git:github.com/dgabka/pi-interactive-subagents
 ```
 
-Supported multiplexers:
-
-- [cmux](https://github.com/manaflow-ai/cmux)
-- [tmux](https://github.com/tmux/tmux)
-- [zellij](https://zellij.dev)
-- [WezTerm](https://wezfurlong.org/wezterm/) (terminal emulator with built-in multiplexing)
-
-Start pi inside one of them:
+Start pi inside [tmux](https://github.com/tmux/tmux):
 
 ```bash
-cmux pi
-# or
 tmux new -A -s pi 'pi'
-# or
-zellij --session pi   # then run: pi
-# or
-# just run pi inside WezTerm — no wrapper needed
 ```
-
-Optional: set `PI_SUBAGENT_MUX=cmux|tmux|zellij|wezterm` to force a specific backend.
 
 If your shell startup is slow and subagent commands sometimes get dropped before the prompt is ready, set `PI_SUBAGENT_SHELL_READY_DELAY_MS` to a higher value (defaults to `500`):
 
@@ -56,7 +41,7 @@ If your shell startup is slow and subagent commands sometimes get dropped before
 export PI_SUBAGENT_SHELL_READY_DELAY_MS=2500
 ```
 
-Subagent panes are created without stealing keyboard focus (cmux, tmux). Launch commands target child surfaces by explicit ID, so focus and command delivery are independent. Note: the `interactive` option controls parent status notifications, not terminal focus.
+Subagent panes are created without stealing keyboard focus. Launch commands target child panes by explicit ID, so focus and command delivery are independent. Note: the `interactive` option controls parent status notifications, not terminal focus.
 
 ## What's Included
 
@@ -66,7 +51,7 @@ Subagent panes are created without stealing keyboard focus (cmux, tmux). Launch 
 
 | Tool                 | Description                                                                                 |
 | -------------------- | ------------------------------------------------------------------------------------------- |
-| `subagent`           | Spawn a sub-agent in a dedicated multiplexer pane (async — returns immediately)             |
+| `subagent`           | Spawn a sub-agent in a dedicated tmux pane (async — returns immediately)                    |
 | `subagent_interrupt` | Interrupt a running Pi-backed subagent's current turn                                       |
 | `subagents_list`     | List available agent definitions                                                            |
 | `subagent_resume`    | Resume a previous sub-agent session (async)                                                 |
@@ -95,7 +80,7 @@ Agent discovery follows priority: **project-local** (`.pi/agents/`) > **global**
 
 ```
 1. Agent calls subagent()          → returns immediately ("started")
-2. Sub-agent runs in mux pane      → widget shows live status
+2. Sub-agent runs in tmux pane     → widget shows live status
 3. User keeps chatting             → main session fully interactive
 4. Sub-agent finishes              → result steered back as a normal completion/failure
 5. Main agent processes result     → continues with new context
@@ -467,26 +452,10 @@ Every sub-agent session displays a compact tools widget showing available and de
 ## Requirements
 
 - [pi](https://github.com/badlogic/pi-mono) — the coding agent
-- One supported multiplexer:
-  - [cmux](https://github.com/manaflow-ai/cmux)
-  - [tmux](https://github.com/tmux/tmux)
-  - [zellij](https://zellij.dev)
-  - [WezTerm](https://wezfurlong.org/wezterm/)
+- [tmux](https://github.com/tmux/tmux)
 
 ```bash
-cmux pi
-# or
 tmux new -A -s pi 'pi'
-# or
-zellij --session pi   # then run: pi
-# or
-# just run pi inside WezTerm
-```
-
-Optional backend override:
-
-```bash
-export PI_SUBAGENT_MUX=cmux   # or tmux, zellij, wezterm
 ```
 
 ---

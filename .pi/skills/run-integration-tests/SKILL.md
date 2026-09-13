@@ -5,22 +5,21 @@ description: Run the integration test suite and verify all sessions end-to-end. 
 
 # Run Integration Tests
 
-Execute the integration test suite inside cmux, then introspect every spawned session to verify the full subagent lifecycle worked end-to-end.
+Execute the integration test suite inside tmux, then introspect every spawned session to verify the full subagent lifecycle worked end-to-end.
 
 ## Step 1: Preflight Checks
 
 Verify the environment is ready:
 
 ```bash
-echo "CMUX_SOCKET_PATH=$CMUX_SOCKET_PATH"
 echo "TMUX=$TMUX"
 node --version
 ```
 
-- At least one of `CMUX_SOCKET_PATH` or `TMUX` must be set
+- `TMUX` must be set
 - Node 22+ required
 
-If neither mux is available, stop and tell the user to run inside cmux or tmux.
+If tmux is unavailable, stop and tell the user to run inside tmux.
 
 ## Step 2: Run Unit Tests
 
@@ -34,20 +33,20 @@ All unit tests must pass. If any fail, stop and fix them before proceeding.
 
 ## Step 3: Run Integration Tests
 
-Use cmux to run the integration tests in a dedicated surface so the main session stays responsive.
+Use tmux to run the integration tests in a detached pane so the main session stays responsive.
 
 ```bash
-SURFACE=$(cmux new-surface --type terminal | awk '{print $2}')
-sleep 0.5
-cmux send --surface $SURFACE 'node --test --test-concurrency=1 test/integration/mux-surface.test.ts test/integration/subagent-lifecycle.test.ts 2>&1; echo __TESTS_DONE_$?__\n'
+SURFACE=$(tmux split-window -d -P -F '#{pane_id}')
+tmux send-keys -t "$SURFACE" -l 'node --test --test-concurrency=1 test/integration/tmux-pane.test.ts test/integration/subagent-lifecycle.test.ts 2>&1; echo __TESTS_DONE_$?__'
+tmux send-keys -t "$SURFACE" Enter
 ```
 
-`--test-concurrency=1` is required: the focus-preservation test asserts global mux state and would race against parallel suites.
+`--test-concurrency=1` is required: the focus-preservation test asserts global tmux state and would race against parallel suites.
 
 Poll until the sentinel appears:
 
 ```bash
-cmux read-screen --surface $SURFACE --lines 200
+tmux capture-pane -p -t "$SURFACE" -S -200
 ```
 
 Look for `__TESTS_DONE_0__` (success) or `__TESTS_DONE_1__` (failure). Poll every 15 seconds. Timeout after 10 minutes.
@@ -55,15 +54,15 @@ Look for `__TESTS_DONE_0__` (success) or `__TESTS_DONE_1__` (failure). Poll ever
 Once done, capture the full output and close the surface:
 
 ```bash
-cmux read-screen --surface $SURFACE --scrollback --lines 500
-cmux close-surface --surface $SURFACE
+tmux capture-pane -p -t "$SURFACE" -S -500
+tmux kill-pane -t "$SURFACE"
 ```
 
 ### Expected results
 
 | Suite | Tests | Approx Duration |
 |-------|-------|-----------------|
-| `mux-surface` | 8 | ~45s |
+| `tmux-pane` | 8 | ~45s |
 | `subagent-lifecycle` | 7 | ~170s |
 
 All 15 tests must pass. If any fail, report the failure output and stop.
@@ -235,7 +234,7 @@ Print a final summary:
 │ Integration Test Results                    │
 ├─────────────────────────────────────────────┤
 │ Unit tests:        114/114 ✅               │
-│ Mux surface:       8/8  ✅                  │
+│ Tmux panes:        8/8  ✅                  │
 │ Subagent lifecycle: 7/7  ✅                 │
 │ Session validation: X sessions verified ✅  │
 │ Fork linkage:      verified ✅              │

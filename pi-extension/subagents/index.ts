@@ -15,19 +15,18 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import {
-  isMuxAvailable,
-  muxSetupHint,
+  isTmuxSession,
+  tmuxSetupHint,
   createSurface,
   sendLongCommand,
   pollForExit,
   closeSurface,
-  getMuxBackend,
   sendEscape,
   shellEscape,
   renameCurrentTab,
   renameWorkspace,
   readScreen,
-} from "./cmux.ts";
+} from "./tmux.ts";
 
 import {
   findLastAssistantMessage,
@@ -393,15 +392,15 @@ function getShellReadyDelayMs(): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 500;
 }
 
-function muxUnavailableResult() {
+function tmuxUnavailableResult() {
   return {
     content: [
       {
         type: "text" as const,
-        text: `Subagents require a supported terminal multiplexer. ${muxSetupHint()}`,
+        text: `Subagents require tmux. ${tmuxSetupHint()}`,
       },
     ],
-    details: { error: "mux not available" },
+    details: { error: "not running inside tmux" },
   };
 }
 
@@ -781,10 +780,9 @@ function requestSubagentInterrupt(
     sendEscapeKey(running.surface);
     return { ok: true };
   } catch (error: any) {
-    const backend = getMuxBackend() ?? "unknown";
     return {
       error:
-        `Failed to send Escape to subagent "${running.name}" via ${backend}: ` +
+        `Failed to send Escape to subagent "${running.name}" via tmux: ` +
         `${error?.message ?? String(error)}`,
     };
   }
@@ -925,7 +923,7 @@ function startWidgetRefresh() {
 }
 
 /**
- * Launch a subagent: creates the multiplexer pane, builds the command, and
+ * Launch a subagent: creates the tmux pane, builds the command, and
  * sends it. Returns a RunningSubagent — does NOT poll.
  *
  * Call watchSubagent() on the returned object to observe completion.
@@ -1399,14 +1397,14 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       name: "subagent",
       label: "Subagent",
       description:
-        "Spawn a sub-agent in a dedicated terminal multiplexer pane. " +
+        "Spawn a sub-agent in a dedicated tmux pane. " +
         "This is a fire-and-forget async tool: the call returns immediately with only an acknowledgement. " +
         "When the sub-agent finishes, the harness AUTOMATICALLY delivers its result as a steer message that wakes you up and starts a new turn — you do not need to do anything to receive it. " +
         "DO NOT write polling loops, sleep/wait commands, tail/watch scripts, or repeatedly read session/log files to detect completion. DO NOT call subagents_list or any other tool to 'check' status. All of that is wasted work — the harness handles delivery for you. " +
         "DO NOT fabricate, assume, or summarize results after calling this tool. " +
         "After spawning, either end your turn immediately, or work on other independent tasks (including spawning more subagents in parallel). The harness will wake you with the result when it is ready.",
       promptSnippet:
-        "Spawn a sub-agent in a dedicated terminal multiplexer pane. " +
+        "Spawn a sub-agent in a dedicated tmux pane. " +
         "This is a fire-and-forget async tool: the call returns immediately with only an acknowledgement. " +
         "When the sub-agent finishes, the harness AUTOMATICALLY delivers its result as a steer message that wakes you up and starts a new turn — you do not need to do anything to receive it. " +
         "DO NOT write polling loops, sleep/wait commands, tail/watch scripts, or repeatedly read session/log files to detect completion. DO NOT call subagents_list or any other tool to 'check' status. All of that is wasted work — the harness handles delivery for you. " +
@@ -1430,8 +1428,8 @@ export default function subagentsExtension(pi: ExtensionAPI) {
         }
 
         // Validate prerequisites
-        if (!isMuxAvailable()) {
-          return muxUnavailableResult();
+        if (!isTmuxSession()) {
+          return tmuxUnavailableResult();
         }
 
         if (!ctx.sessionManager.getSessionFile()) {
@@ -1711,14 +1709,14 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       name: "subagent_resume",
       label: "Resume Subagent",
       description:
-        "Resume a previous sub-agent session in a new multiplexer pane. " +
+        "Resume a previous sub-agent session in a new tmux pane. " +
         "This is a fire-and-forget async tool: the call returns immediately with only an acknowledgement. " +
         "When the resumed sub-agent finishes, the harness AUTOMATICALLY delivers its result as a steer message that wakes you up and starts a new turn — you do not need to do anything to receive it. " +
         "DO NOT write polling loops, sleep/wait commands, tail/watch scripts, or repeatedly read session/log files to detect completion. DO NOT poll for status. All of that is wasted work — the harness handles delivery for you. " +
         "DO NOT fabricate or assume results. After resuming, either end your turn or work on other independent tasks; the harness will wake you when the result is ready. " +
         "Use when a sub-agent was cancelled or needs follow-up work.",
       promptSnippet:
-        "Resume a previous sub-agent session in a new multiplexer pane. " +
+        "Resume a previous sub-agent session in a new tmux pane. " +
         "This is a fire-and-forget async tool: the call returns immediately with only an acknowledgement. " +
         "When the resumed sub-agent finishes, the harness AUTOMATICALLY delivers its result as a steer message that wakes you up and starts a new turn — you do not need to do anything to receive it. " +
         "DO NOT write polling loops, sleep/wait commands, tail/watch scripts, or repeatedly read session/log files to detect completion. DO NOT poll for status. All of that is wasted work — the harness handles delivery for you. " +
@@ -1777,8 +1775,8 @@ export default function subagentsExtension(pi: ExtensionAPI) {
         const startTime = Date.now();
         const id = Math.random().toString(16).slice(2, 10);
 
-        if (!isMuxAvailable()) {
-          return muxUnavailableResult();
+        if (!isTmuxSession()) {
+          return tmuxUnavailableResult();
         }
 
         if (!existsSync(params.sessionPath)) {
@@ -2159,7 +2157,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       }
 
       // Rename workspace and tab to show this is a planning session
-      if (isMuxAvailable()) {
+      if (isTmuxSession()) {
         try {
           const label = task.length > 40 ? task.slice(0, 40) + "..." : task;
           renameWorkspace(`🎯 ${label}`);
