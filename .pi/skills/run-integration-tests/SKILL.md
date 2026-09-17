@@ -75,7 +75,7 @@ Override defaults with environment variables:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `PI_TEST_MODEL` | `anthropic/claude-haiku-4-5` | Model for LLM-backed tests |
+| `PI_TEST_MODEL` | `openai-codex/gpt-5.4-mini` | Model for LLM-backed tests |
 | `PI_TEST_TIMEOUT` | `120000` | Per-test timeout in ms |
 
 ## Step 4: Introspect Sessions
