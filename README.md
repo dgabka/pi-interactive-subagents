@@ -448,6 +448,10 @@ Every sub-agent session displays a compact tools widget showing available and de
 
 ---
 
+## Releases
+
+Pushing to `main` automatically releases conventional commits: `fix`/`perf` bumps patch, `feat` bumps minor, and `!` or `BREAKING CHANGE:` bumps major. Other commit types do not release. On its first run it tags and releases the current `package.json` version; later releases run tests, bump the version, then create generated GitHub release notes.
+
 ## Requirements
 
 - [pi](https://github.com/badlogic/pi-mono) — the coding agent

@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Determine version bump
+        id: bump
+        run: |
+          BASE=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          if [ -z "$BASE" ]; then
+            echo "bootstrap=true" >> "$GITHUB_OUTPUT"
+            echo "version=$(node -p \"require('./package.json').version\")" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          COMMITS=$(git log "$BASE"..HEAD --format=%B)
+          if grep -Eq '^[a-z]+(\([^)]*\))?!:|BREAKING CHANGE:' <<< "$COMMITS"; then BUMP=major
+          elif grep -Eq '^feat(\([^)]*\))?:' <<< "$COMMITS"; then BUMP=minor
+          elif grep -Eq '^(fix|perf)(\([^)]*\))?:' <<< "$COMMITS"; then BUMP=patch
+          else BUMP=
+          fi
+          echo "value=$BUMP" >> "$GITHUB_OUTPUT"
+
+      - run: corepack enable
+        if: steps.bump.outputs.value != ''
+      - run: pnpm install --frozen-lockfile
+        if: steps.bump.outputs.value != ''
+      - run: pnpm test
+        if: steps.bump.outputs.value != ''
+
+      - name: Create the initial version tag
+        if: steps.bump.outputs.bootstrap == 'true'
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git tag "v${{ steps.bump.outputs.version }}"
+          git push origin "v${{ steps.bump.outputs.version }}"
+
+      - name: Bump, commit, and tag
+        id: version
+        if: steps.bump.outputs.value != ''
+        run: |
+          npm version "${{ steps.bump.outputs.value }}" --no-git-tag-version
+          VERSION=$(node -p "require('./package.json').version")
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add package.json
+          git commit -m "chore(release): v$VERSION"
+          git tag "v$VERSION"
+          git push origin HEAD:main --follow-tags
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        if: steps.bump.outputs.value != '' || steps.bump.outputs.bootstrap == 'true'
+        run: gh release create "v${{ steps.version.outputs.version || steps.bump.outputs.version }}" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
