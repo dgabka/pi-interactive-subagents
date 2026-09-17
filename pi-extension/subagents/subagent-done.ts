@@ -94,7 +94,7 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setWidget(
       "subagent-tools",
       (_tui: any, theme: any) => {
-        const box = new Box(1, 0, (text: string) => theme.bg("toolSuccessBg", text));
+        const box = new Box(1, 0, (text: string) => text);
 
         const label = subagentAgent || subagentName;
         const agentTag = label ? theme.bold(theme.fg("accent", `[${label}]`)) : "";

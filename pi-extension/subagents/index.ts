@@ -535,16 +535,16 @@ function formatElapsedMMSS(startTime: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-const ACCENT = "\x1b[38;2;77;163;255m";
-const RST = "\x1b[0m";
+type TextStyle = (text: string) => string;
+const plainText: TextStyle = (text) => text;
 
 /**
  * Build a bordered content line: │left          right│
  * Left content is truncated if needed, right is preserved, padded to fill width.
  */
-function borderLine(left: string, right: string, width: number): string {
+function borderLine(left: string, right: string, width: number, accent: TextStyle = plainText): string {
   if (width <= 0) return "";
-  if (width === 1) return `${ACCENT}│${RST}`;
+  if (width === 1) return accent("│");
 
   // width = total visible chars for the whole line including │ and │
   const contentWidth = Math.max(0, width - 2); // space inside the two │ chars
@@ -555,23 +555,23 @@ function borderLine(left: string, right: string, width: number): string {
   if (rightVis >= contentWidth) {
     const truncRight = truncateToWidth(right, contentWidth);
     const rightPad = Math.max(0, contentWidth - visibleWidth(truncRight));
-    return `${ACCENT}│${RST}${truncRight}${" ".repeat(rightPad)}${ACCENT}│${RST}`;
+    return `${accent("│")}${truncRight}${" ".repeat(rightPad)}${accent("│")}`;
   }
 
   const maxLeft = Math.max(0, contentWidth - rightVis);
   const truncLeft = truncateToWidth(left, maxLeft);
   const leftVis = visibleWidth(truncLeft);
   const pad = Math.max(0, contentWidth - leftVis - rightVis);
-  return `${ACCENT}│${RST}${truncLeft}${" ".repeat(pad)}${right}${ACCENT}│${RST}`;
+  return `${accent("│")}${truncLeft}${" ".repeat(pad)}${right}${accent("│")}`;
 }
 
 /**
  * Build the bordered top line: ╭─ Title ──── info ─╮
  * All chars are accounted for within `width`.
  */
-function borderTop(title: string, info: string, width: number): string {
+function borderTop(title: string, info: string, width: number, accent: TextStyle = plainText): string {
   if (width <= 0) return "";
-  if (width === 1) return `${ACCENT}╭${RST}`;
+  if (width === 1) return accent("╭");
 
   // ╭─ Title ───...─── info ─╮
   // overhead: ╭─ (2) + space around title (2) + space around info (2) + ─╮ (2) = but we simplify
@@ -581,26 +581,26 @@ function borderTop(title: string, info: string, width: number): string {
   const fillLen = Math.max(0, inner - titlePart.length - infoPart.length);
   const fill = "─".repeat(fillLen);
   const content = `${titlePart}${fill}${infoPart}`.slice(0, inner).padEnd(inner, "─");
-  return `${ACCENT}╭${content}╮${RST}`;
+  return accent(`╭${content}╮`);
 }
 
 /**
  * Build the bordered bottom line: ╰──────────────────╯
  */
-function borderBottom(width: number): string {
+function borderBottom(width: number, accent: TextStyle = plainText): string {
   if (width <= 0) return "";
-  if (width === 1) return `${ACCENT}╰${RST}`;
+  if (width === 1) return accent("╰");
 
   const inner = Math.max(0, width - 2);
-  return `${ACCENT}╰${"─".repeat(inner)}╯${RST}`;
+  return accent(`╰${"─".repeat(inner)}╯`);
 }
 
-function renderSubagentWidgetLines(agents: RunningSubagent[], width: number): string[] {
+function renderSubagentWidgetLines(agents: RunningSubagent[], width: number, accent: TextStyle = plainText): string[] {
   const count = agents.length;
   const title = "Subagents";
   const info = `${count} running`;
 
-  const lines: string[] = [borderTop(title, info, width)];
+  const lines: string[] = [borderTop(title, info, width, accent)];
 
   for (const agent of agents) {
     const elapsed = formatElapsedMMSS(agent.startTime);
@@ -613,10 +613,10 @@ function renderSubagentWidgetLines(agents: RunningSubagent[], width: number): st
         ? " running… "
         : " starting… ";
 
-    lines.push(borderLine(left, right, width));
+    lines.push(borderLine(left, right, width, accent));
   }
 
-  lines.push(borderBottom(width));
+  lines.push(borderBottom(width, accent));
   return lines;
 }
 
@@ -635,11 +635,11 @@ function updateWidget() {
 
   latestCtx.ui.setWidget(
     "subagent-status",
-    (_tui: any, _theme: any) => {
+    (_tui: any, theme: any) => {
       return {
         invalidate() {},
         render(width: number) {
-          return renderSubagentWidgetLines(Array.from(runningSubagents.values()), width);
+          return renderSubagentWidgetLines(Array.from(runningSubagents.values()), width, (text) => theme.fg("customMessageLabel", text));
         },
       };
     },
@@ -2119,7 +2119,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       render(width: number): string[] {
         const name = details.name ?? "subagent";
         const agentTag = details.agent ? theme.fg("dim", ` (${details.agent})`) : "";
-        const bgFn = (text: string) => theme.bg("toolSuccessBg", text);
+        const bgFn = (text: string) => theme.bg("customMessageBg", text);
 
         const icon = theme.fg("accent", "?");
         const header = `${icon} ${theme.fg("toolTitle", theme.bold(name))}${agentTag} ${theme.fg("dim", "— needs help")}`;
