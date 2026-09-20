@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -72,6 +72,43 @@ describe("todos", () => {
     assert.ok(existsSync(join(planB, "todos", "TODO-0001.json")));
     assert.ok(!existsSync(join(dir, ".pi", "todos.json")));
     assert.throws(() => listTodos(dir, ""), /Plan selector is required/);
+  }));
+
+  it("rejects non-plan selectors and escaping todos symlinks", () => withTempDir((dir) => {
+    const plans = join(dir, ".pi", "plans");
+    const plan = join(plans, "plan");
+    const nonPlan = join(plans, "bucket");
+    mkdirSync(plan, { recursive: true });
+    mkdirSync(nonPlan, { recursive: true });
+    writeFileSync(join(plan, "plan.md"), "# Plan\n");
+    writeFileSync(join(plans, "other.md"), "# Other\n");
+
+    assert.throws(() => listTodos(dir, nonPlan), /contain plan\.md/);
+    assert.throws(() => listTodos(dir, join(plans, "other.md")), /plan directory or plan\.md/);
+
+    const outside = join(dir, "outside");
+    mkdirSync(outside);
+    symlinkSync(outside, join(plan, "todos"));
+    assert.throws(() => listTodos(dir, plan), /Todos directory must be within plan/);
+  }));
+
+  it("identifies malformed canonical tickets", () => withTempDir((dir) => {
+    const plan = join(dir, ".pi", "plans", "plan");
+    const todos = join(plan, "todos");
+    mkdirSync(todos, { recursive: true });
+    writeFileSync(join(plan, "plan.md"), "# Plan\n");
+
+    for (const [name, content] of [
+      ["TODO-0001.json", "{"],
+      ["TODO-0002.json", "null"],
+      ["TODO-0003.json", JSON.stringify({ id: "TODO-9999", title: "x", body: "", tags: [], status: "open", createdAt: "", updatedAt: "" })],
+    ]) {
+      writeFileSync(join(todos, name), content);
+      const error = new RegExp(`Invalid todo ticket: .*${name}`);
+      assert.throws(() => listTodos(dir, plan), error);
+      assert.throws(() => createTodo(dir, plan, { title: "new" }), error);
+      rmSync(join(todos, name));
+    }
   }));
 });
 

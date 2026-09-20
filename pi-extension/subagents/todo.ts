@@ -37,8 +37,17 @@ function todoDirectory(cwd: string, plan: string): string {
   if (!pathFromPlans || pathFromPlans.startsWith("..") || pathFromPlans.includes("../") || resolve(root, pathFromPlans) !== directory) {
     throw new Error(`Plan must be beneath ${plans}: ${plan}`);
   }
+  const planFile = join(directory, "plan.md");
+  if (!existsSync(planFile) || !statSync(planFile).isFile()) throw new Error(`Plan directory must contain plan.md: ${plan}`);
 
-  return join(directory, "todos");
+  const todos = join(directory, "todos");
+  if (!existsSync(todos)) return todos;
+  const resolvedTodos = realpathSync(todos);
+  const pathFromPlan = relative(directory, resolvedTodos);
+  if (!statSync(resolvedTodos).isDirectory() || !pathFromPlan || pathFromPlan.startsWith("..") || pathFromPlan.includes("../") || resolve(directory, pathFromPlan) !== resolvedTodos) {
+    throw new Error(`Todos directory must be within plan: ${todos}`);
+  }
+  return resolvedTodos;
 }
 
 function ticketPath(todos: string, id: string): string {
@@ -48,7 +57,17 @@ function ticketPath(todos: string, id: string): string {
 
 function readTodo(path: string): Todo {
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as Todo;
+    const todo: unknown = JSON.parse(readFileSync(path, "utf8"));
+    const expectedId = ticketName.exec(basename(path))?.[1];
+    if (!todo || typeof todo !== "object" || Array.isArray(todo)
+      || typeof (todo as Todo).id !== "string" || (todo as Todo).id !== `TODO-${expectedId}`
+      || typeof (todo as Todo).title !== "string" || typeof (todo as Todo).body !== "string"
+      || !Array.isArray((todo as Todo).tags) || !(todo as Todo).tags.every((tag) => typeof tag === "string")
+      || !["open", "in_progress", "closed"].includes((todo as Todo).status)
+      || typeof (todo as Todo).createdAt !== "string" || typeof (todo as Todo).updatedAt !== "string") {
+      throw new Error("Invalid ticket shape");
+    }
+    return todo as Todo;
   } catch (error) {
     throw new Error(`Invalid todo ticket: ${path}`, { cause: error });
   }
@@ -66,7 +85,9 @@ function ticketFiles(todos: string): string[] {
 }
 
 function nextId(todos: string): string {
-  const last = ticketFiles(todos).reduce((max, file) => Math.max(max, Number(ticketName.exec(file)![1])), 0);
+  const files = ticketFiles(todos);
+  for (const file of files) readTodo(join(todos, file));
+  const last = files.reduce((max, file) => Math.max(max, Number(ticketName.exec(file)![1])), 0);
   if (last === 9999) throw new Error(`Todo ID limit reached: ${todos}`);
   return `TODO-${String(last + 1).padStart(4, "0")}`;
 }
