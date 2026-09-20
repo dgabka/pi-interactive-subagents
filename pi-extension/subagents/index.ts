@@ -892,6 +892,19 @@ function resolveResumeLaunchBehavior(params: { autoExit?: boolean }): { autoExit
 
 type BranchContext = Pick<ExtensionContext, "cwd" | "sessionManager">;
 type BranchCommandContext = BranchContext & Pick<ExtensionContext, "ui" | "waitForIdle">;
+type BranchLaunchDeps = {
+  createSurface: typeof createSurface;
+  sendLongCommand: typeof sendLongCommand;
+  closeSurface: typeof closeSurface;
+  wait: (ms: number) => Promise<void>;
+};
+
+const branchLaunchDeps: BranchLaunchDeps = {
+  createSurface,
+  sendLongCommand,
+  closeSurface,
+  wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
 
 function createBranchedSession(ctx: BranchContext): string {
   const parentFile = ctx.sessionManager.getSessionFile();
@@ -901,9 +914,12 @@ function createBranchedSession(ctx: BranchContext): string {
 
   const parent = SessionManager.open(parentFile, ctx.sessionManager.getSessionDir(), ctx.cwd);
   if (!parent.getEntry(leafId)) throw new Error("Current session leaf is not persisted");
+  if (!parent.getBranch(leafId).some((entry) => entry.type === "message" && (entry as any).message?.role === "assistant")) {
+    throw new Error("Nothing to branch");
+  }
 
   const childFile = parent.createBranchedSession(leafId);
-  if (!childFile) throw new Error("Could not create branched session");
+  if (!childFile || !existsSync(childFile)) throw new Error("Nothing to branch");
   return childFile;
 }
 
@@ -914,20 +930,20 @@ function buildBranchedSessionCommand(childFile: string): string {
   return `${env}pi --session ${shellEscape(childFile)}`;
 }
 
-async function launchBranchedSession(ctx: BranchContext): Promise<string> {
+async function launchBranchedSession(ctx: BranchContext, deps = branchLaunchDeps): Promise<string> {
   const childFile = createBranchedSession(ctx);
   let surface: string | undefined;
 
   try {
-    surface = createSurface("Branch");
-    await new Promise<void>((resolve) => setTimeout(resolve, getShellReadyDelayMs()));
+    surface = deps.createSurface("Branch");
+    await deps.wait(getShellReadyDelayMs());
 
     const scriptPath = join(
       getArtifactDir(ctx.sessionManager.getSessionDir(), ctx.sessionManager.getSessionId()),
       "subagent-scripts",
       `branch-${Date.now()}.sh`,
     );
-    sendLongCommand(surface, buildBranchedSessionCommand(childFile), {
+    deps.sendLongCommand(surface, buildBranchedSessionCommand(childFile), {
       scriptPath,
       scriptPreamble: [
         "# Independent Pi session branch launch script",
@@ -940,7 +956,7 @@ async function launchBranchedSession(ctx: BranchContext): Promise<string> {
   } catch (error) {
     if (surface) {
       try {
-        closeSurface(surface);
+        deps.closeSurface(surface);
       } catch {}
     }
     throw error;
