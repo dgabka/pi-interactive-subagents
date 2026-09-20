@@ -47,7 +47,7 @@ Subagent panes are created without stealing keyboard focus. Launch commands targ
 
 ### Extensions
 
-**Subagents** — 4 main-session tools + 3 commands, plus 1 subagent-only tool:
+**Subagents** — 5 main-session tools + 3 commands, plus 1 subagent-only tool:
 
 | Tool                 | Description                                                                                 |
 | -------------------- | ------------------------------------------------------------------------------------------- |
@@ -55,6 +55,7 @@ Subagent panes are created without stealing keyboard focus. Launch commands targ
 | `subagent_interrupt` | Interrupt a running Pi-backed subagent's current turn                                       |
 | `subagents_list`     | List available agent definitions                                                            |
 | `subagent_resume`    | Resume a previous sub-agent session (async)                                                 |
+| `todo`               | Shared project-local todos for planner and workers (`.pi/todos.json`)                       |
 
 | Command                    | Description                          |
 | -------------------------- | ------------------------------------ |

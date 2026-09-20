@@ -52,6 +52,7 @@ import {
   type ActivityReadResult,
   type SubagentActivityState,
 } from "./activity.ts";
+import { createTodo, getTodo, listTodos, updateTodo } from "./todo.ts";
 
 /** Absolute path to `pi-extension/subagents`. https://github.com/nodejs/node/issues/37845 */
 const SUBAGENTS_DIR = dirname(fileURLToPath(import.meta.url));
@@ -1390,6 +1391,62 @@ export default function subagentsExtension(pi: ExtensionAPI) {
   );
 
   const shouldRegister = (name: string) => !deniedTools.has(name);
+
+  // ── shared project todo tool ──
+  if (shouldRegister("todo"))
+    pi.registerTool({
+      name: "todo",
+      label: "Todo",
+      description:
+        "Manage the shared project todo list. Todos are stored in .pi/todos.json so the planner, workers, and parent session use the same list.",
+      parameters: Type.Object({
+        action: Type.Union([
+          Type.Literal("create"),
+          Type.Literal("list"),
+          Type.Literal("get"),
+          Type.Literal("claim"),
+          Type.Literal("update"),
+        ]),
+        id: Type.Optional(Type.String({ description: "Todo ID, e.g. TODO-0001" })),
+        title: Type.Optional(Type.String({ description: "Todo title (required for create)" })),
+        body: Type.Optional(Type.String({ description: "Implementation context, examples, and references" })),
+        tags: Type.Optional(Type.Array(Type.String(), { description: "Tags for grouping todos" })),
+        status: Type.Optional(
+          Type.Union([Type.Literal("open"), Type.Literal("in_progress"), Type.Literal("closed")]),
+        ),
+      }),
+      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+        try {
+          if (params.action === "list") {
+            const todos = listTodos(ctx.cwd);
+            const text = todos.length
+              ? todos.map((todo) => `${todo.id} [${todo.status}] ${todo.title}`).join("\n")
+              : "No todos.";
+            return { content: [{ type: "text", text }], details: { todos } };
+          }
+          if (params.action === "create") {
+            if (!params.title) return { content: [{ type: "text", text: "title is required to create a todo." }], details: {} };
+            const todo = createTodo(ctx.cwd, { title: params.title, body: params.body, tags: params.tags });
+            return { content: [{ type: "text", text: `Created ${todo.id}: ${todo.title}` }], details: { todo } };
+          }
+          if (!params.id) return { content: [{ type: "text", text: "id is required for this action." }], details: {} };
+          if (params.action === "get") {
+            const todo = getTodo(ctx.cwd, params.id);
+            return todo
+              ? { content: [{ type: "text", text: JSON.stringify(todo, null, 2) }], details: { todo } }
+              : { content: [{ type: "text", text: `Todo not found: ${params.id}` }], details: {} };
+          }
+          const todo = updateTodo(ctx.cwd, params.id, params.action === "claim"
+            ? { status: "in_progress" }
+            : { title: params.title, body: params.body, tags: params.tags, status: params.status });
+          return todo
+            ? { content: [{ type: "text", text: `Updated ${todo.id}: ${todo.status}` }], details: { todo } }
+            : { content: [{ type: "text", text: `Todo not found: ${params.id}` }], details: {} };
+        } catch (error) {
+          return { content: [{ type: "text", text: `Todo error: ${error instanceof Error ? error.message : String(error)}` }], details: {} };
+        }
+      },
+    });
 
   // ── subagent tool ──
   if (shouldRegister("subagent"))

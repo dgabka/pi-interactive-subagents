@@ -45,6 +45,19 @@ import {
   findLatestAssistantError,
 } from "../pi-extension/subagents/subagent-done.ts";
 import { __pollForExitTest__ } from "../pi-extension/subagents/tmux.ts";
+import { createTodo, getTodo, listTodos, updateTodo } from "../pi-extension/subagents/todo.ts";
+
+describe("todos", () => {
+  it("persists shared todos without erasing unchanged fields", () => withTempDir((dir) => {
+    const created = createTodo(dir, { title: "Implement it", body: "Use src/example.ts", tags: ["plan"] });
+    assert.equal(created.id, "TODO-0001");
+    const claimed = updateTodo(dir, created.id, { status: "in_progress" });
+    assert.equal(claimed?.body, "Use src/example.ts");
+    assert.deepEqual(claimed?.tags, ["plan"]);
+    assert.equal(getTodo(dir, created.id)?.status, "in_progress");
+    assert.equal(listTodos(dir).length, 1);
+  }));
+});
 
 // --- Helpers ---
 
