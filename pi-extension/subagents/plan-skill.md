@@ -58,6 +58,7 @@ Standard filenames:
 
 - `.pi/plans/YYYY-MM-DD-<name>/scout-context.md`
 - `.pi/plans/YYYY-MM-DD-<name>/plan.md`
+- `.pi/plans/YYYY-MM-DD-<name>/todos/TODO-NNNN.json`
 - `.pi/plans/YYYY-MM-DD-<name>/review.md` (optional, for reviewer output)
 
 ---
@@ -97,6 +98,7 @@ Scout context:
 [paste scout findings here — file structure, conventions, patterns, relevant code]
 
 Save the final plan to: .pi/plans/YYYY-MM-DD-<name>/plan.md
+Use `.pi/plans/YYYY-MM-DD-<name>/plan.md` as the required `plan` selector when creating every todo. Todo IDs are plan-local.
 Create todos tagged with: <name>`,
 });
 ```
@@ -134,7 +136,7 @@ Fold the new context into the worker tasks.
 Once the planner closes, read the plan and list todos:
 
 ```typescript
-todo({ action: "list" });
+todo({ action: "list", plan: ".pi/plans/YYYY-MM-DD-<name>/plan.md" });
 ```
 
 Review with the user:
@@ -145,21 +147,21 @@ Review with the user:
 
 ## Phase 5: Execute Todos
 
-Spawn workers sequentially. Each worker gets the plan path and scout context:
+Spawn workers sequentially. Delegate each plan-local todo ID together with its plan path and scout context. Workers use that selector for get, claim, and update:
 
 ```typescript
 // Workers execute todos sequentially — one at a time
 subagent({
   name: "🔨 Worker 1/N",
   agent: "worker",
-  task: "Implement TODO-xxxx. Mark the todo as done. Plan: [plan path]\n\nScout context: [paste scout summary from Phase 2, plus any re-scout from Phase 3]",
+  task: "Implement TODO-xxxx using plan selector [plan path]. Mark the todo as done with that same selector. Plan: [plan path]\n\nScout context: [paste scout summary from Phase 2, plus any re-scout from Phase 3]",
 });
 
 // Check result, then next todo
 subagent({
   name: "🔨 Worker 2/N",
   agent: "worker",
-  task: "Implement TODO-yyyy. Mark the todo as done. Plan: [plan path]\n\nScout context: [paste scout summary]",
+  task: "Implement TODO-yyyy using plan selector [plan path]. Mark the todo as done with that same selector. Plan: [plan path]\n\nScout context: [paste scout summary]",
 });
 ```
 
@@ -187,7 +189,7 @@ Triage findings:
 - **P2** — Minor issues → fix if quick, note otherwise
 - **P3** — Nits → skip
 
-Create todos for P0/P1, run workers to fix, re-review only if fixes were substantial.
+Create P0/P1 follow-up todos with the same plan selector, run workers to fix, re-review only if fixes were substantial.
 
 ---
 
@@ -197,7 +199,7 @@ Before reporting done:
 
 1. ✅ Scout ran before the planner?
 2. ✅ Scout context was passed to the planner?
-3. ✅ All worker todos closed?
+3. ✅ All todos for the selected plan closed? (`todo({ action: "list", plan: "[plan path]" })`)
 4. ✅ Every todo has a polished commit (using the `commit` skill)?
 5. ✅ Reviewer has run?
 6. ✅ Reviewer findings triaged and addressed?

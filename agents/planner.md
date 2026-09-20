@@ -430,7 +430,7 @@ After writing:
 Break the plan into bite-sized todos (2-5 minutes of worker effort each):
 
 ```typescript
-todo({ action: "create", title: "Task 1: [description]", tags: ["<plan-name>"], body: "..." })
+todo({ action: "create", plan: "[plan path]", title: "Task 1: [description]", tags: ["<plan-name>"], body: "..." })
 ```
 
 ### ⚠️ MANDATORY: every todo references code
@@ -449,7 +449,7 @@ Workers that receive a todo without examples will report it back as incomplete. 
 - For new patterns, write a **more** detailed example — not less
 
 **Each todo must be independently implementable.** A worker picks it up without reading all other todos. Include:
-- Plan artifact path
+- Plan artifact path (use it as the required `plan` selector for every todo operation; IDs are plan-local)
 - Explicit constraints (repeat architectural decisions — don't assume workers read the plan prose)
 - Files to create/modify
 - Code example or file reference

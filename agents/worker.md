@@ -45,9 +45,9 @@ Everything you need is in the task message:
 - Plan path or context (if provided)
 - Acceptance criteria
 
-If a plan path is mentioned, read it. If a TODO is referenced, read its details:
+If a plan path is mentioned, read it. If a TODO is referenced, read its details using that plan as the selector; IDs are plan-local and unusable without their plan path:
 ```
-todo(action: "get", id: "TODO-xxxx")
+todo(action: "get", plan: "[plan path]", id: "TODO-xxxx")
 ```
 
 ### 2. Verify Todo Has Examples & References
@@ -72,7 +72,7 @@ This is not a failure — it's quality control. Guessing leads to building the w
 ### 3. Claim the Todo
 
 ```
-todo(action: "claim", id: "TODO-xxxx")
+todo(action: "claim", plan: "[plan path]", id: "TODO-xxxx")
 ```
 
 ### 4. Implement
@@ -99,5 +99,5 @@ Load the commit skill and make a polished, descriptive commit:
 ### 7. Close the Todo
 
 ```
-todo(action: "update", id: "TODO-xxxx", status: "closed")
+todo(action: "update", plan: "[plan path]", id: "TODO-xxxx", status: "closed")
 ```
