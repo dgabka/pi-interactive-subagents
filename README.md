@@ -47,7 +47,7 @@ Subagent panes are created without stealing keyboard focus. Launch commands targ
 
 ### Extensions
 
-**Subagents** — 5 main-session tools + 3 commands, plus 1 subagent-only tool:
+**Subagents** — 5 main-session tools + 4 commands, plus 1 subagent-only tool:
 
 | Tool                 | Description                                                                                 |
 | -------------------- | ------------------------------------------------------------------------------------------- |
@@ -57,11 +57,12 @@ Subagent panes are created without stealing keyboard focus. Launch commands targ
 | `subagent_resume`    | Resume a previous sub-agent session (async)                                                 |
 | `todo`               | Shared project-local todos for planner and workers (`.pi/todos.json`)                       |
 
-| Command                    | Description                          |
-| -------------------------- | ------------------------------------ |
-| `/plan`                    | Start a full planning workflow       |
-| `/iterate`                 | Fork into a subagent for quick fixes |
-| `/subagent <agent> <task>` | Spawn a named agent directly         |
+| Command                    | Description                                      |
+| -------------------------- | ------------------------------------------------ |
+| `/plan`                    | Start a full planning workflow                   |
+| `/iterate`                 | Fork into a subagent for quick fixes             |
+| `/branch`                  | Open an independent session copy in a tmux pane  |
+| `/subagent <agent> <task>` | Spawn a named agent directly                     |
 
 ### Bundled Agents
 
@@ -251,6 +252,12 @@ For quick, focused work without polluting the main session's context.
 ```
 
 This always forks the current session into a subagent with full conversation context. It does not inherit an agent default `session-mode`. Make the fix, verify it, and exit to return. The main session gets a summary of what was done.
+
+### Branching into an independent session
+
+Run `/branch` to copy the complete active conversation path into a new tmux pane. The new ordinary Pi session opens with an empty editor and is independent immediately: it is not a subagent, is not tracked, and sends no completion notification. Its work and conversation history are not merged back into the parent.
+
+Unlike task-oriented `/iterate`, `/branch` takes no task or initial prompt and leaves the branch entirely user-managed.
 
 ---
 

@@ -1,6 +1,6 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -116,6 +116,16 @@ function createMockExtensionApi() {
       },
     } as any,
   };
+}
+
+function withEnvVar<T>(name: string, value: string | undefined, fn: () => T): T {
+  const previous = process.env[name];
+  restoreEnvVar(name, value);
+  try {
+    return fn();
+  } finally {
+    restoreEnvVar(name, previous);
+  }
 }
 
 function restoreEnvVar(name: string, value: string | undefined) {
@@ -1359,6 +1369,155 @@ describe("commands", () => {
     assert.equal(sentUserMessages.length, 1);
     assert.match(sentUserMessages[0], /fork: true/);
     assert.match(sentUserMessages[0], /name: "Iterate"/);
+  });
+
+  it("registers /branch without sending a user message", () => {
+    withEnvVar("PI_DENY_TOOLS", undefined, () => {
+      const { api, registeredCommands, sentUserMessages } = createMockExtensionApi();
+      (subagentsModule as any).default(api);
+
+      assert.ok(registeredCommands.some((command) => command.name === "branch"));
+      assert.deepEqual(sentUserMessages, []);
+    });
+  });
+
+  it("rejects branch arguments with a usage warning", async () => {
+    const notifications: Array<{ message: string; level: string }> = [];
+    let launched = false;
+    await (subagentsModule as any).__test__.handleBranchCommand("unexpected", {
+      ui: { notify: (message: string, level: string) => notifications.push({ message, level }) },
+      waitForIdle: async () => assert.fail("waitForIdle should not run"),
+    }, async () => {
+      launched = true;
+      return "unused";
+    });
+
+    assert.equal(launched, false);
+    assert.deepEqual(notifications, [{ message: "Usage: /branch", level: "warning" }]);
+  });
+
+  it("waits for idle before launching and reports branch outcomes", async () => {
+    const events: string[] = [];
+    const notifications: Array<{ message: string; level: string }> = [];
+    const ctx = {
+      ui: { notify: (message: string, level: string) => notifications.push({ message, level }) },
+      waitForIdle: async () => { events.push("waitForIdle"); },
+    };
+
+    await (subagentsModule as any).__test__.handleBranchCommand("", ctx, async () => {
+      events.push("launch");
+      return "/tmp/child.jsonl";
+    });
+    await (subagentsModule as any).__test__.handleBranchCommand("", ctx, async () => {
+      throw new Error("tmux unavailable");
+    });
+
+    assert.deepEqual(events, ["waitForIdle", "launch", "waitForIdle"]);
+    assert.deepEqual(notifications, [
+      { message: "Branched session: /tmp/child.jsonl", level: "info" },
+      { message: "Branch failed: tmux unavailable", level: "error" },
+    ]);
+  });
+
+  it("rejects fresh and user-only sessions", () => {
+    withTempDir((dir) => {
+      for (const entries of [
+        [
+          { type: "session", id: "parent", version: 3, cwd: dir },
+          { type: "model_change", id: "model", parentId: null, timestamp: "2026-01-01T00:00:00.000Z" },
+          { type: "thinking_level_change", id: "thinking", parentId: "model", timestamp: "2026-01-01T00:00:01.000Z" },
+        ],
+        [
+          { type: "session", id: "parent", version: 3, cwd: dir },
+          { type: "model_change", id: "model", parentId: null, timestamp: "2026-01-01T00:00:00.000Z" },
+          { type: "message", id: "user", parentId: "model", timestamp: "2026-01-01T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "hello" }] } },
+        ],
+      ]) {
+        const parentFile = createSessionFile(dir, entries);
+        assert.throws(() => (subagentsModule as any).__test__.createBranchedSession({
+          cwd: dir,
+          sessionManager: {
+            getSessionFile: () => parentFile,
+            getSessionDir: () => dir,
+            getLeafId: () => entries.at(-1)?.id,
+          },
+        }), /Nothing to branch/);
+      }
+    });
+  });
+
+  it("creates an active-path-only native session branch", () => {
+    withTempDir((dir) => {
+      const parentFile = createSessionFile(dir, [
+        { type: "session", id: "parent", version: 3, cwd: dir },
+        { type: "model_change", id: "root", parentId: null, timestamp: "2026-01-01T00:00:00.000Z" },
+        { type: "message", id: "chosen-user", parentId: "root", timestamp: "2026-01-01T00:00:01.000Z", message: { role: "user", content: [{ type: "text", text: "chosen" }] } },
+        { type: "message", id: "chosen-assistant", parentId: "chosen-user", timestamp: "2026-01-01T00:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "answer" }] } },
+        { type: "message", id: "inactive-user", parentId: "root", timestamp: "2026-01-01T00:00:03.000Z", message: { role: "user", content: [{ type: "text", text: "inactive" }] } },
+        { type: "message", id: "inactive-assistant", parentId: "inactive-user", timestamp: "2026-01-01T00:00:04.000Z", message: { role: "assistant", content: [{ type: "text", text: "other" }] } },
+      ]);
+      const original = readFileSync(parentFile, "utf8");
+      const childFile = (subagentsModule as any).__test__.createBranchedSession({
+        cwd: dir,
+        sessionManager: {
+          getSessionFile: () => parentFile,
+          getSessionDir: () => dir,
+          getLeafId: () => "chosen-assistant",
+        },
+      });
+      const [header, ...entries] = readFileSync(childFile, "utf8").trim().split("\n").map(JSON.parse);
+
+      assert.equal(header.parentSession, parentFile);
+      assert.deepEqual(entries.map((entry: any) => entry.id), ["root", "chosen-user", "chosen-assistant"]);
+      assert.equal(entries.some((entry: any) => entry.id.startsWith("inactive")), false);
+      assert.equal(readFileSync(parentFile, "utf8"), original);
+    });
+  });
+
+  it("targets the new branch pane and closes it when delivery fails", async () => {
+    const dir = createTestDir();
+    try {
+      const parentFile = createSessionFile(dir, [
+        { type: "session", id: "parent", version: 3, cwd: dir },
+        { type: "model_change", id: "model", parentId: null, timestamp: "2026-01-01T00:00:00.000Z" },
+        { type: "message", id: "assistant", parentId: "model", timestamp: "2026-01-01T00:00:01.000Z", message: { role: "assistant", content: [{ type: "text", text: "answer" }] } },
+      ]);
+      const sent: Array<{ surface: string; command: string }> = [];
+      const closed: string[] = [];
+      await assert.rejects(() => (subagentsModule as any).__test__.launchBranchedSession({
+        cwd: dir,
+        sessionManager: {
+          getSessionFile: () => parentFile,
+          getSessionDir: () => dir,
+          getSessionId: () => "parent",
+          getLeafId: () => "assistant",
+        },
+      }, {
+        createSurface: () => "%branch",
+        wait: async () => {},
+        sendLongCommand: (surface: string, command: string) => {
+          sent.push({ surface, command });
+          throw new Error("send failed");
+        },
+        closeSurface: (surface: string) => closed.push(surface),
+      }), /send failed/);
+
+      assert.deepEqual(sent.map(({ surface }) => surface), ["%branch"]);
+      assert.deepEqual(closed, ["%branch"]);
+      const childFile = sent[0].command.match(/--session '([^']+)'/)?.[1];
+      assert.ok(childFile && existsSync(childFile), "child session remains available for recovery");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("builds a promptless ordinary Pi branch command", () => {
+    const command = withEnvVar("PI_CODING_AGENT_DIR", "/tmp/pi config", () =>
+      (subagentsModule as any).__test__.buildBranchedSessionCommand("/tmp/child session.jsonl"),
+    );
+
+    assert.match(command, /^PI_CODING_AGENT_DIR='\/tmp\/pi config' pi --session '\/tmp\/child session\.jsonl'$/);
+    assert.doesNotMatch(command, /subagent-done|PI_SUBAGENT_|Continue helping/);
   });
 });
 

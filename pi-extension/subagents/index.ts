@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { keyHint } from "@earendil-works/pi-coding-agent";
+import { keyHint, SessionManager } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "@sinclair/typebox";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { dirname, join } from "node:path";
@@ -891,6 +891,98 @@ function resolveResumeLaunchBehavior(params: { autoExit?: boolean }): { autoExit
   return { autoExit, interactive: !autoExit };
 }
 
+type BranchContext = Pick<ExtensionContext, "cwd" | "sessionManager">;
+type BranchCommandContext = BranchContext & Pick<ExtensionContext, "ui" | "waitForIdle">;
+type BranchLaunchDeps = {
+  createSurface: typeof createSurface;
+  sendLongCommand: typeof sendLongCommand;
+  closeSurface: typeof closeSurface;
+  wait: (ms: number) => Promise<void>;
+};
+
+const branchLaunchDeps: BranchLaunchDeps = {
+  createSurface,
+  sendLongCommand,
+  closeSurface,
+  wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+};
+
+function createBranchedSession(ctx: BranchContext): string {
+  const parentFile = ctx.sessionManager.getSessionFile();
+  const leafId = ctx.sessionManager.getLeafId();
+  if (!parentFile || !existsSync(parentFile)) throw new Error("No session file");
+  if (!leafId) throw new Error("Nothing to branch");
+
+  const parent = SessionManager.open(parentFile, ctx.sessionManager.getSessionDir(), ctx.cwd);
+  if (!parent.getEntry(leafId)) throw new Error("Current session leaf is not persisted");
+  if (!parent.getBranch(leafId).some((entry) => entry.type === "message" && (entry as any).message?.role === "assistant")) {
+    throw new Error("Nothing to branch");
+  }
+
+  const childFile = parent.createBranchedSession(leafId);
+  if (!childFile || !existsSync(childFile)) throw new Error("Nothing to branch");
+  return childFile;
+}
+
+function buildBranchedSessionCommand(childFile: string): string {
+  const env = process.env.PI_CODING_AGENT_DIR
+    ? `PI_CODING_AGENT_DIR=${shellEscape(process.env.PI_CODING_AGENT_DIR)} `
+    : "";
+  return `${env}pi --session ${shellEscape(childFile)}`;
+}
+
+async function launchBranchedSession(ctx: BranchContext, deps = branchLaunchDeps): Promise<string> {
+  const childFile = createBranchedSession(ctx);
+  let surface: string | undefined;
+
+  try {
+    surface = deps.createSurface("Branch");
+    await deps.wait(getShellReadyDelayMs());
+
+    const scriptPath = join(
+      getArtifactDir(ctx.sessionManager.getSessionDir(), ctx.sessionManager.getSessionId()),
+      "subagent-scripts",
+      `branch-${Date.now()}.sh`,
+    );
+    deps.sendLongCommand(surface, buildBranchedSessionCommand(childFile), {
+      scriptPath,
+      scriptPreamble: [
+        "# Independent Pi session branch launch script",
+        `# Generated: ${new Date().toISOString()}`,
+        `# Session: ${childFile}`,
+        `# Surface: ${surface}`,
+      ].join("\n"),
+    });
+    return childFile;
+  } catch (error) {
+    if (surface) {
+      try {
+        deps.closeSurface(surface);
+      } catch {}
+    }
+    throw error;
+  }
+}
+
+async function handleBranchCommand(
+  args: string,
+  ctx: BranchCommandContext,
+  launch: (ctx: BranchContext) => Promise<string> = launchBranchedSession,
+): Promise<void> {
+  if (args.trim()) {
+    ctx.ui.notify("Usage: /branch", "warning");
+    return;
+  }
+
+  await ctx.waitForIdle();
+  try {
+    const childFile = await launch(ctx);
+    ctx.ui.notify(`Branched session: ${childFile}`, "info");
+  } catch (error) {
+    ctx.ui.notify(`Branch failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+  }
+}
+
 export const __test__ = {
   borderLine,
   getShellReadyDelayMs,
@@ -910,6 +1002,10 @@ export const __test__ = {
   handleSubagentInterrupt,
   resolveResultPresentation,
   resolveResumeLaunchBehavior,
+  createBranchedSession,
+  buildBranchedSessionCommand,
+  launchBranchedSession,
+  handleBranchCommand,
   runningSubagents,
   formatElapsed,
 };
@@ -2017,6 +2113,11 @@ export default function subagentsExtension(pi: ExtensionAPI) {
         };
       },
     });
+
+  pi.registerCommand("branch", {
+    description: "Open an independent copy of this session in a tmux pane",
+    handler: handleBranchCommand,
+  });
 
   // /iterate command — fork the session into a subagent
   pi.registerCommand("iterate", {
