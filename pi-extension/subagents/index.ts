@@ -906,6 +906,42 @@ function createBranchedSession(ctx: BranchContext): string {
   return childFile;
 }
 
+async function launchBranchedSession(ctx: BranchContext): Promise<string> {
+  const childFile = createBranchedSession(ctx);
+  let surface: string | undefined;
+
+  try {
+    surface = createSurface("Branch");
+    await new Promise<void>((resolve) => setTimeout(resolve, getShellReadyDelayMs()));
+
+    const env = process.env.PI_CODING_AGENT_DIR
+      ? `PI_CODING_AGENT_DIR=${shellEscape(process.env.PI_CODING_AGENT_DIR)} `
+      : "";
+    const scriptPath = join(
+      getArtifactDir(ctx.sessionManager.getSessionDir(), ctx.sessionManager.getSessionId()),
+      "subagent-scripts",
+      `branch-${Date.now()}.sh`,
+    );
+    sendLongCommand(surface, `${env}pi --session ${shellEscape(childFile)}`, {
+      scriptPath,
+      scriptPreamble: [
+        "# Independent Pi session branch launch script",
+        `# Generated: ${new Date().toISOString()}`,
+        `# Session: ${childFile}`,
+        `# Surface: ${surface}`,
+      ].join("\n"),
+    });
+    return childFile;
+  } catch (error) {
+    if (surface) {
+      try {
+        closeSurface(surface);
+      } catch {}
+    }
+    throw error;
+  }
+}
+
 export const __test__ = {
   borderLine,
   getShellReadyDelayMs,
@@ -926,6 +962,7 @@ export const __test__ = {
   resolveResultPresentation,
   resolveResumeLaunchBehavior,
   createBranchedSession,
+  launchBranchedSession,
   runningSubagents,
   formatElapsed,
 };
