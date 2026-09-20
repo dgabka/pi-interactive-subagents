@@ -891,6 +891,7 @@ function resolveResumeLaunchBehavior(params: { autoExit?: boolean }): { autoExit
 }
 
 type BranchContext = Pick<ExtensionContext, "cwd" | "sessionManager">;
+type BranchCommandContext = BranchContext & Pick<ExtensionContext, "ui" | "waitForIdle">;
 
 function createBranchedSession(ctx: BranchContext): string {
   const parentFile = ctx.sessionManager.getSessionFile();
@@ -942,6 +943,25 @@ async function launchBranchedSession(ctx: BranchContext): Promise<string> {
   }
 }
 
+async function handleBranchCommand(
+  args: string,
+  ctx: BranchCommandContext,
+  launch: (ctx: BranchContext) => Promise<string> = launchBranchedSession,
+): Promise<void> {
+  if (args.trim()) {
+    ctx.ui.notify("Usage: /branch", "warning");
+    return;
+  }
+
+  await ctx.waitForIdle();
+  try {
+    const childFile = await launch(ctx);
+    ctx.ui.notify(`Branched session: ${childFile}`, "info");
+  } catch (error) {
+    ctx.ui.notify(`Branch failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+  }
+}
+
 export const __test__ = {
   borderLine,
   getShellReadyDelayMs,
@@ -963,6 +983,7 @@ export const __test__ = {
   resolveResumeLaunchBehavior,
   createBranchedSession,
   launchBranchedSession,
+  handleBranchCommand,
   runningSubagents,
   formatElapsed,
 };
@@ -2014,6 +2035,11 @@ export default function subagentsExtension(pi: ExtensionAPI) {
         };
       },
     });
+
+  pi.registerCommand("branch", {
+    description: "Open an independent copy of this session in a tmux pane",
+    handler: handleBranchCommand,
+  });
 
   // /iterate command — fork the session into a subagent
   pi.registerCommand("iterate", {
