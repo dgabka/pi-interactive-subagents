@@ -64,7 +64,7 @@ jobs:
           git add package.json
           git commit -m "chore(release): v$VERSION"
           git tag "v$VERSION"
-          git push origin HEAD:main --follow-tags
+          git push origin HEAD:main "v$VERSION"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub release
