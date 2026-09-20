@@ -48,14 +48,30 @@ import { __pollForExitTest__ } from "../pi-extension/subagents/tmux.ts";
 import { createTodo, getTodo, listTodos, updateTodo } from "../pi-extension/subagents/todo.ts";
 
 describe("todos", () => {
-  it("persists shared todos without erasing unchanged fields", () => withTempDir((dir) => {
-    const created = createTodo(dir, { title: "Implement it", body: "Use src/example.ts", tags: ["plan"] });
-    assert.equal(created.id, "TODO-0001");
-    const claimed = updateTodo(dir, created.id, { status: "in_progress" });
+  it("persists todos within their selected plans", () => withTempDir((dir) => {
+    const planA = join(dir, ".pi", "plans", "plan-a");
+    const planB = join(dir, ".pi", "plans", "plan-b");
+    mkdirSync(planA, { recursive: true });
+    mkdirSync(planB, { recursive: true });
+    writeFileSync(join(planA, "plan.md"), "# A\n");
+    writeFileSync(join(planB, "plan.md"), "# B\n");
+
+    const firstA = createTodo(dir, join(planA, "plan.md"), { title: "A", body: "Use src/example.ts", tags: ["plan"] });
+    const firstB = createTodo(dir, planB, { title: "B" });
+    assert.equal(firstA.id, "TODO-0001");
+    assert.equal(firstB.id, "TODO-0001");
+
+    const claimed = updateTodo(dir, planA, firstA.id, { status: "in_progress" });
     assert.equal(claimed?.body, "Use src/example.ts");
     assert.deepEqual(claimed?.tags, ["plan"]);
-    assert.equal(getTodo(dir, created.id)?.status, "in_progress");
-    assert.equal(listTodos(dir).length, 1);
+    assert.equal(getTodo(dir, join(planA, "plan.md"), firstA.id)?.status, "in_progress");
+    assert.equal(listTodos(dir, planA).length, 1);
+    assert.equal(listTodos(dir, join(planA, "plan.md")).length, 1);
+    assert.equal(listTodos(dir, planB).length, 1);
+    assert.ok(existsSync(join(planA, "todos", "TODO-0001.json")));
+    assert.ok(existsSync(join(planB, "todos", "TODO-0001.json")));
+    assert.ok(!existsSync(join(dir, ".pi", "todos.json")));
+    assert.throws(() => listTodos(dir, ""), /Plan selector is required/);
   }));
 });
 
