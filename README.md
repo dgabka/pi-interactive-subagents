@@ -55,7 +55,7 @@ Subagent panes are created without stealing keyboard focus. Launch commands targ
 | `subagent_interrupt` | Interrupt a running Pi-backed subagent's current turn                                       |
 | `subagents_list`     | List available agent definitions                                                            |
 | `subagent_resume`    | Resume a previous sub-agent session (async)                                                 |
-| `todo`               | Shared project-local todos for planner and workers (`.pi/todos.json`)                       |
+| `todo`               | Plan-local todo files for planner and workers                                               |
 
 | Command                    | Description                                      |
 | -------------------------- | ------------------------------------------------ |
@@ -63,6 +63,26 @@ Subagent panes are created without stealing keyboard focus. Launch commands targ
 | `/iterate`                 | Fork into a subagent for quick fixes             |
 | `/branch`                  | Open an independent session copy in a tmux pane  |
 | `/subagent <agent> <task>` | Spawn a named agent directly                     |
+
+### Plan-local todos
+
+Todos belong to a plan and are stored as separate files:
+
+```text
+.pi/plans/2026-09-20/example/
+├── plan.md
+└── todos/
+    ├── TODO-0001.json
+    └── TODO-0002.json
+```
+
+Every `todo` call requires the plan selector. Todo IDs are plan-local, so always pass the plan path with the ID:
+
+```js
+todo({ action: "get", plan: ".pi/plans/2026-09-20/example/plan.md", id: "TODO-0001" })
+```
+
+This is intentionally breaking: selector-less calls fail. Legacy `.pi/todos.json` is neither read nor migrated.
 
 ### Bundled Agents
 
