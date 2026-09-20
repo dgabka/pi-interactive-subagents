@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { keyHint } from "@earendil-works/pi-coding-agent";
+import { keyHint, SessionManager } from "@earendil-works/pi-coding-agent";
 import { Type, type Static } from "@sinclair/typebox";
 import { Box, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { dirname, join } from "node:path";
@@ -890,6 +890,22 @@ function resolveResumeLaunchBehavior(params: { autoExit?: boolean }): { autoExit
   return { autoExit, interactive: !autoExit };
 }
 
+type BranchContext = Pick<ExtensionContext, "cwd" | "sessionManager">;
+
+function createBranchedSession(ctx: BranchContext): string {
+  const parentFile = ctx.sessionManager.getSessionFile();
+  const leafId = ctx.sessionManager.getLeafId();
+  if (!parentFile || !existsSync(parentFile)) throw new Error("No session file");
+  if (!leafId) throw new Error("Nothing to branch");
+
+  const parent = SessionManager.open(parentFile, ctx.sessionManager.getSessionDir(), ctx.cwd);
+  if (!parent.getEntry(leafId)) throw new Error("Current session leaf is not persisted");
+
+  const childFile = parent.createBranchedSession(leafId);
+  if (!childFile) throw new Error("Could not create branched session");
+  return childFile;
+}
+
 export const __test__ = {
   borderLine,
   getShellReadyDelayMs,
@@ -909,6 +925,7 @@ export const __test__ = {
   handleSubagentInterrupt,
   resolveResultPresentation,
   resolveResumeLaunchBehavior,
+  createBranchedSession,
   runningSubagents,
   formatElapsed,
 };
