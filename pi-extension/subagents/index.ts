@@ -1488,13 +1488,13 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 
   const shouldRegister = (name: string) => !deniedTools.has(name);
 
-  // ── shared project todo tool ──
+  // ── plan-local todo tool ──
   if (shouldRegister("todo"))
     pi.registerTool({
       name: "todo",
       label: "Todo",
       description:
-        "Manage the shared project todo list. Todos are stored in .pi/todos.json so the planner, workers, and parent session use the same list.",
+        "Manage todos for an explicit plan. Todos are stored under the selected plan's todos/ directory.",
       parameters: Type.Object({
         action: Type.Union([
           Type.Literal("create"),
@@ -1503,6 +1503,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
           Type.Literal("claim"),
           Type.Literal("update"),
         ]),
+        plan: Type.String({ description: "Plan directory or plan.md path" }),
         id: Type.Optional(Type.String({ description: "Todo ID, e.g. TODO-0001" })),
         title: Type.Optional(Type.String({ description: "Todo title (required for create)" })),
         body: Type.Optional(Type.String({ description: "Implementation context, examples, and references" })),
@@ -1514,7 +1515,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
         try {
           if (params.action === "list") {
-            const todos = listTodos(ctx.cwd);
+            const todos = listTodos(ctx.cwd, params.plan);
             const text = todos.length
               ? todos.map((todo) => `${todo.id} [${todo.status}] ${todo.title}`).join("\n")
               : "No todos.";
@@ -1522,17 +1523,17 @@ export default function subagentsExtension(pi: ExtensionAPI) {
           }
           if (params.action === "create") {
             if (!params.title) return { content: [{ type: "text", text: "title is required to create a todo." }], details: {} };
-            const todo = createTodo(ctx.cwd, { title: params.title, body: params.body, tags: params.tags });
+            const todo = createTodo(ctx.cwd, params.plan, { title: params.title, body: params.body, tags: params.tags });
             return { content: [{ type: "text", text: `Created ${todo.id}: ${todo.title}` }], details: { todo } };
           }
           if (!params.id) return { content: [{ type: "text", text: "id is required for this action." }], details: {} };
           if (params.action === "get") {
-            const todo = getTodo(ctx.cwd, params.id);
+            const todo = getTodo(ctx.cwd, params.plan, params.id);
             return todo
               ? { content: [{ type: "text", text: JSON.stringify(todo, null, 2) }], details: { todo } }
               : { content: [{ type: "text", text: `Todo not found: ${params.id}` }], details: {} };
           }
-          const todo = updateTodo(ctx.cwd, params.id, params.action === "claim"
+          const todo = updateTodo(ctx.cwd, params.plan, params.id, params.action === "claim"
             ? { status: "in_progress" }
             : { title: params.title, body: params.body, tags: params.tags, status: params.status });
           return todo
