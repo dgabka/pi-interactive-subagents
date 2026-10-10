@@ -2300,6 +2300,33 @@ describe("subagents widget rendering", () => {
   });
 });
 
+describe("plan-auto workflow prompt contract", () => {
+  const skillPath = fileURLToPath(new URL("../pi-extension/subagents/plan-auto-skill.md", import.meta.url));
+  const interactiveSkillPath = fileURLToPath(new URL("../pi-extension/subagents/plan-skill.md", import.meta.url));
+
+  it("keeps autonomous orchestration bounded, sequential, and non-interactive", () => {
+    const skill = readFileSync(skillPath, "utf8");
+
+    assert.match(skill, /run the scout before planning/i);
+    assert.match(skill, /agent: "planner-auto"/);
+    assert.match(skill, /interactive: false/);
+    assert.match(skill, /three total attempts/i);
+    assert.match(skill, /inspect persisted artifact, selected plan-local todo state, and repository state/i);
+    assert.match(skill, /one at a time/i);
+    assert.match(skill, /Do not use parallel workers/i);
+    assert.match(skill, /exactly one final reviewer invocation/i);
+    assert.match(skill, /P2\/P3 findings.*do not create automatic fixes/is);
+    assert.match(skill, /never poll/i);
+    assert.doesNotMatch(skill, /Ready to execute, or anything to adjust/i);
+  });
+
+  it("preserves the separate interactive /plan workflow", () => {
+    const interactiveSkill = readFileSync(interactiveSkillPath, "utf8");
+    assert.match(interactiveSkill, /agent: "planner"/);
+    assert.match(interactiveSkill, /interactive: true/);
+  });
+});
+
 describe("tmux.ts", () => {
   describe("shellEscape", () => {
     it("quotes shell arguments", () => {
