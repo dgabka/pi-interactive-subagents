@@ -1053,8 +1053,8 @@ describe("subagent discovery", () => {
     );
   });
 
-  it("bundled scout/worker/reviewer agents resolve as non-interactive; planner resolves as interactive", () => {
-    for (const name of ["scout", "worker", "reviewer"]) {
+  it("bundled autonomous agents resolve as non-interactive; planner remains interactive", () => {
+    for (const name of ["scout", "worker", "reviewer", "planner-auto"]) {
       const defs = testApi.loadAgentDefaults(name);
       assert.ok(defs, `expected bundled agent ${name} to be discoverable`);
       assert.equal(
