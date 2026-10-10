@@ -1073,6 +1073,17 @@ describe("subagent discovery", () => {
     );
   });
 
+  it("bundled artifact-producing roles can write their required outputs", () => {
+    for (const name of ["scout", "reviewer"]) {
+      const defs = testApi.loadAgentDefaults(name);
+      assert.ok(defs, `expected bundled agent ${name} to be discoverable`);
+      assert.ok(
+        defs.tools?.split(",").map((tool: string) => tool.trim()).includes("write"),
+        `${name} must be able to write its required artifact`,
+      );
+    }
+  });
+
   it("ignores invalid session-mode values", async () => {
     await withIsolatedAgentEnv(async ({ projectAgentsDir }) => {
       writeAgentFile(
