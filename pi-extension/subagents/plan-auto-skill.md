@@ -14,6 +14,7 @@ Briefly orient yourself (repository shape and relevant area), then choose a shor
 - `PLAN=.pi/plans/YYYY-MM-DD-<slug>/plan.md`
 - `SCOUT=.pi/plans/YYYY-MM-DD-<slug>/scout-context.md`
 - `REVIEW=.pi/plans/YYYY-MM-DD-<slug>/review.md`
+- `FINAL_REVIEW=.pi/plans/YYYY-MM-DD-<slug>/final-review.md`
 
 All `todo` calls in this workflow must use `plan: PLAN`, never a directory-only or inferred selector. Do not poll for subagent completion. A `subagent` completion delivered by the harness is the only completion signal.
 
@@ -35,7 +36,7 @@ stop after attempt 3; report the failed phase, attempts, diagnostics, artifacts,
 
 Before a retry, read the expected artifact and list selected-plan todos. Inspect repository changes (for example `git status --short` and relevant diffs) when a phase can have modified the repository. Never destructively reset partial changes. Never recreate valid artifacts or duplicate todos. Never rerun a closed todo.
 
-An artifact is valid only when it is readable and structurally useful: scout context contains concrete repository findings; `PLAN` is a readable plan with implementation scope; `REVIEW` is a readable review with a verdict and severity-ranked findings. Treat missing, unreadable, empty, or structurally incomplete artifacts as a failed attempt.
+An artifact is valid only when it is readable and structurally useful: scout context contains concrete repository findings; `PLAN` is a readable plan with implementation scope; each phase's expected review artifact is a readable review with a verdict and severity-ranked findings. Treat missing, unreadable, empty, or structurally incomplete artifacts as a failed attempt.
 
 ## 1. Scout
 
@@ -119,9 +120,18 @@ If the initial review has P0 or P1 findings, create only the necessary remediati
 
 Execute remediation todos sequentially in todo order using the same worker protocol above. Do not rerun closed remediation todos. If any worker exhausts three attempts, stop.
 
-Run exactly one final reviewer invocation after all remediation todos close, using the same three-total-attempt protocol and a final review artifact (overwrite `REVIEW` only after preserving/including the initial findings, or write `final-review.md`). Do not begin another remediation cycle.
+Run exactly one final reviewer invocation after all remediation todos close. Use the same three-total-attempt protocol with `FINAL_REVIEW` as its expected artifact: validate/reuse only `FINAL_REVIEW`, never `REVIEW`. Keep the initial `REVIEW` unchanged. The post-remediation reviewer must write its severity-ranked verdict to `FINAL_REVIEW`:
 
-If final review still has P0/P1 findings, report an unsuccessful terminal result with those findings. P2/P3 findings remain report-only.
+```typescript
+subagent({
+  name: "Final Reviewer",
+  agent: "reviewer",
+  interactive: false,
+  task: `Review the remediation against ${PLAN}. Read ${SCOUT}, the initial review at ${REVIEW}, and repository changes. Write a new severity-ranked review with a verdict to ${FINAL_REVIEW}.`,
+});
+```
+
+Do not begin another remediation cycle. If final review still has P0/P1 findings, report an unsuccessful terminal result with those findings. P2/P3 findings remain report-only.
 
 ## Final report
 

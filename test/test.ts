@@ -2347,6 +2347,11 @@ describe("plan-auto workflow prompt contract", () => {
     assert.match(skill, /one at a time/i);
     assert.match(skill, /Do not use parallel workers/i);
     assert.match(skill, /exactly one final reviewer invocation/i);
+    assert.match(skill, /FINAL_REVIEW=\.pi\/plans\/YYYY-MM-DD-<slug>\/final-review\.md/);
+    assert.match(skill, /## 4\. Initial review[\s\S]*Write a severity-ranked review with a verdict to \$\{REVIEW\}/);
+    assert.match(skill, /validate\/reuse only `FINAL_REVIEW`, never `REVIEW`/);
+    assert.match(skill, /Keep the initial `REVIEW` unchanged/);
+    assert.match(skill, /Write a new severity-ranked review with a verdict to \$\{FINAL_REVIEW\}/);
     assert.match(skill, /P2\/P3 findings.*do not create automatic fixes/is);
     assert.match(skill, /never poll/i);
     assert.doesNotMatch(skill, /Ready to execute, or anything to adjust/i);
