@@ -24,7 +24,8 @@ Every scout, planner, worker, and reviewer invocation has **three total attempts
 
 ```text
 for attempt in 1..3:
-  inspect persisted artifact, selected plan-local todo state, and repository state
+  inspect persisted artifact and repository state
+  if PLAN exists, inspect selected plan-local todo state
   if the phase result is already valid, reuse it and continue
   spawn the autonomous agent with interactive: false
   wait for harness completion delivery; never poll
@@ -34,7 +35,7 @@ for attempt in 1..3:
 stop after attempt 3; report the failed phase, attempts, diagnostics, artifacts, and todo state
 ```
 
-Before a retry, read the expected artifact and list selected-plan todos. Inspect repository changes (for example `git status --short` and relevant diffs) when a phase can have modified the repository. Never destructively reset partial changes. Never recreate valid artifacts or duplicate todos. Never rerun a closed todo.
+Before a retry, read the expected artifact. List selected-plan todos only if `PLAN` exists; before planning creates it, do not make todo calls. Inspect repository changes (for example `git status --short` and relevant diffs) when a phase can have modified the repository. Never destructively reset partial changes. Never recreate valid artifacts or duplicate todos. Never rerun a closed todo.
 
 An artifact is valid only when it is readable and structurally useful: scout context contains concrete repository findings; `PLAN` is a readable plan with implementation scope; each phase's expected review artifact is a readable review with a verdict and severity-ranked findings. Treat missing, unreadable, empty, or structurally incomplete artifacts as a failed attempt.
 
@@ -51,7 +52,7 @@ subagent({
 });
 ```
 
-Use the retry protocol. On retry, retain a valid `SCOUT`; otherwise tell the scout to repair or complete its existing context rather than replace useful findings. Stop the entire workflow if its third attempt fails.
+Use the retry protocol. During scouting, `PLAN` normally does not exist, so inspect only `SCOUT` and repository state; do not list plan-local todos. On retry, retain a valid `SCOUT`; otherwise tell the scout to repair or complete its existing context rather than replace useful findings. Stop the entire workflow if its third attempt fails.
 
 ## 2. Autonomous planning
 
@@ -64,7 +65,7 @@ subagent({
   interactive: false,
   task: `Plan: [original task]
 
-Read scout context at ${SCOUT}. Write the plan to ${PLAN}. Record sensible-default assumptions. Before creating anything, inspect ${PLAN} and list todos using plan: ${PLAN}; on a retry repair valid planning work and do not duplicate todos. Load write-todos before creating todos. Every created todo must use ${PLAN} as its plan selector.`,
+Read scout context at ${SCOUT}. First check whether ${PLAN} exists. If it exists, inspect it and list todos using plan: ${PLAN}; repair valid planning work and do not duplicate todos. If it does not exist, write the initial plan to ${PLAN} before listing or creating todos. Record sensible-default assumptions. Load write-todos before creating todos. Every created todo must use ${PLAN} as its plan selector.`,
 });
 ```
 
