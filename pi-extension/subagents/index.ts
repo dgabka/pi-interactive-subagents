@@ -2335,5 +2335,34 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       );
     },
   });
+
+  // /plan-auto command — start the autonomous planning workflow
+  pi.registerCommand("plan-auto", {
+    description: "Start autonomous planning and implementation: /plan-auto <what to build>",
+    handler: async (args, ctx) => {
+      const task = args.trim();
+      if (!task) {
+        ctx.ui.notify("Usage: /plan-auto <what to build>", "warning");
+        return;
+      }
+
+      if (isTmuxSession()) {
+        try {
+          const label = task.length > 40 ? task.slice(0, 40) + "..." : task;
+          renameWorkspace(`🎯 ${label}`);
+          renameCurrentTab(`🎯 Plan Auto: ${label}`);
+        } catch {
+          // non-critical -- do not block the plan
+        }
+      }
+
+      const planAutoSkillPath = join(SUBAGENTS_DIR, "plan-auto-skill.md");
+      let content = readFileSync(planAutoSkillPath, "utf8");
+      content = content.replace(/^---\n[\s\S]*?\n---\n*/, "");
+      pi.sendUserMessage(
+        `<skill name="plan-auto" location="${planAutoSkillPath}">\n${content.trim()}\n</skill>\n\n${task}`,
+      );
+    },
+  });
 }
 // test

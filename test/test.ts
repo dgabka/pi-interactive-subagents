@@ -1409,6 +1409,38 @@ describe("tmux.ts interpretExitSidecar", () => {
   });
 });
 describe("commands", () => {
+  it("registers /plan-auto and injects its autonomous skill", async () => {
+    const { api, registeredCommands, sentUserMessages } = createMockExtensionApi();
+    (subagentsModule as any).default(api);
+
+    const plan = registeredCommands.find((command) => command.name === "plan");
+    const planAuto = registeredCommands.find((command) => command.name === "plan-auto");
+    assert.ok(plan, "expected /plan to remain registered");
+    assert.ok(planAuto, "expected /plan-auto to be registered");
+
+    await planAuto.handler("  Add unattended planning  ", { ui: { notify: assert.fail } });
+
+    assert.equal(sentUserMessages.length, 1);
+    assert.match(sentUserMessages[0], /<skill name="plan-auto" location="[^"]*plan-auto-skill\.md">/);
+    assert.match(sentUserMessages[0], /\n\nAdd unattended planning$/);
+    assert.doesNotMatch(sentUserMessages[0], /<skill name="plan"/);
+  });
+
+  it("warns rather than injecting /plan-auto without a task", async () => {
+    const { api, registeredCommands, sentUserMessages } = createMockExtensionApi();
+    const notifications: Array<{ message: string; level: string }> = [];
+    (subagentsModule as any).default(api);
+
+    const planAuto = registeredCommands.find((command) => command.name === "plan-auto");
+    assert.ok(planAuto, "expected /plan-auto to be registered");
+    await planAuto.handler("   ", {
+      ui: { notify: (message: string, level: string) => notifications.push({ message, level }) },
+    });
+
+    assert.deepEqual(notifications, [{ message: "Usage: /plan-auto <what to build>", level: "warning" }]);
+    assert.deepEqual(sentUserMessages, []);
+  });
+
   it("/iterate always emits a full-context fork tool call", () => {
     const { api, registeredCommands, sentUserMessages } = createMockExtensionApi();
 
