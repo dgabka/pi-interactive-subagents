@@ -2305,13 +2305,13 @@ export default function subagentsExtension(pi: ExtensionAPI) {
     };
   });
 
-  // /plan command — start the full planning workflow
-  pi.registerCommand("plan", {
-    description: "Start a planning session: /plan <what to build>",
+  // /ship command — start the full delivery workflow
+  pi.registerCommand("ship", {
+    description: "Start a collaborative delivery session: /ship <what to build>",
     handler: async (args, ctx) => {
       const task = args.trim();
       if (!task) {
-        ctx.ui.notify("Usage: /plan <what to build>", "warning");
+        ctx.ui.notify("Usage: /ship <what to build>", "warning");
         return;
       }
 
@@ -2331,18 +2331,18 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       let content = readFileSync(planSkillPath, "utf8");
       content = content.replace(/^---\n[\s\S]*?\n---\n*/, "");
       pi.sendUserMessage(
-        `<skill name="plan" location="${planSkillPath}">\n${content.trim()}\n</skill>\n\n${task}`,
+        `<skill name="ship" location="${planSkillPath}">\n${content.trim()}\n</skill>\n\n${task}`,
       );
     },
   });
 
-  // /plan-auto command — start the autonomous planning workflow
-  pi.registerCommand("plan-auto", {
-    description: "Start autonomous planning and implementation: /plan-auto <what to build>",
+  // /ship-auto command — start the autonomous delivery workflow
+  pi.registerCommand("ship-auto", {
+    description: "Start autonomous delivery: /ship-auto <what to build>",
     handler: async (args, ctx) => {
       const task = args.trim();
       if (!task) {
-        ctx.ui.notify("Usage: /plan-auto <what to build>", "warning");
+        ctx.ui.notify("Usage: /ship-auto <what to build>", "warning");
         return;
       }
 
@@ -2360,7 +2360,7 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       let content = readFileSync(planAutoSkillPath, "utf8");
       content = content.replace(/^---\n[\s\S]*?\n---\n*/, "");
       pi.sendUserMessage(
-        `<skill name="plan-auto" location="${planAutoSkillPath}">\n${content.trim()}\n</skill>\n\n${task}`,
+        `<skill name="ship-auto" location="${planAutoSkillPath}">\n${content.trim()}\n</skill>\n\n${task}`,
       );
     },
   });

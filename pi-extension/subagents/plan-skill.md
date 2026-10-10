@@ -1,7 +1,7 @@
 ---
-name: plan
+name: ship
 description: >
-  Planning workflow. Runs a pre-flight scout, then spawns the planner agent
+  Collaborative delivery workflow. Runs a pre-flight scout, then spawns the planner agent
   which clarifies WHAT to build and figures out HOW, with the ability to
   spawn its own scouts/researchers mid-session. Use when asked to "plan",
   "brainstorm", "I want to build X", or "let's design". Requires the

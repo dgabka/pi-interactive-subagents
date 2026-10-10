@@ -59,8 +59,8 @@ Subagent panes are created without stealing keyboard focus. Launch commands targ
 
 | Command                    | Description                                      |
 | -------------------------- | ------------------------------------------------ |
-| `/plan`                    | Start a user-collaborative planning workflow     |
-| `/plan-auto <task>`        | Plan, implement, and review autonomously         |
+| `/ship`                    | Start a user-collaborative delivery workflow     |
+| `/ship-auto <task>`        | Plan, implement, and review autonomously         |
 | `/iterate`                 | Fork into a subagent for quick fixes             |
 | `/branch`                  | Open an independent session copy in a tmux pane  |
 | `/subagent <agent> <task>` | Spawn a named agent directly                     |
@@ -240,12 +240,12 @@ await caller_ping({
 
 ---
 
-## The `/plan` Workflow
+## The `/ship` Workflow
 
-The `/plan` command orchestrates a full planning-to-implementation pipeline.
+The `/ship` command orchestrates a full planning-to-implementation pipeline.
 
 ```
-/plan Add a dark mode toggle to the settings page
+/ship Add a dark mode toggle to the settings page
 ```
 
 ```
@@ -265,19 +265,19 @@ Tab/window titles update to show current phase:
 
 ---
 
-## The `/plan-auto` Workflow
+## The `/ship-auto` Workflow
 
-`/plan-auto <task>` runs the same broad lifecycle unattended: scout → autonomous planner → sequential workers → reviewer. It never pauses for invoking-user questions or approval. The planner chooses the smallest conventional answer to ambiguity and records its assumptions in the plan.
+`/ship-auto <task>` runs the same broad lifecycle unattended: scout → autonomous planner → sequential workers → reviewer. It never pauses for invoking-user questions or approval. The planner chooses the smallest conventional answer to ambiguity and records its assumptions in the plan.
 
 ```text
-/plan-auto Add a dark mode toggle to the settings page
+/ship-auto Add a dark mode toggle to the settings page
 ```
 
 The workflow stores its plan, scout context, todos, and reviews under `.pi/plans/YYYY-MM-DD-<name>/`, so interrupted or failed work remains available for inspection or continuation. Each agent phase gets one attempt plus at most two retries; before continuing, retries inspect existing artifacts, selected-plan todos, and repository state rather than discarding work or duplicating completed todos.
 
 Workers run one at a time in todo order. After the initial review, the workflow may run one sequential P0/P1 remediation cycle followed by one final review; P2/P3 findings are reported without automatic fixes. If a phase still fails after its bounded retries, the terminal report identifies the failed phase and preserves its artifacts and todo state.
 
-Use `/plan` when you want to collaborate with the interactive planner, review the plan, and decide when execution proceeds. Normal agent discovery precedence still applies, so a project-local or global `planner-auto` definition can override the bundled autonomous planner.
+Use `/ship` when you want to collaborate with the interactive planner, review the plan, and decide when execution proceeds. Normal agent discovery precedence still applies, so a project-local or global `planner-auto` definition can override the bundled autonomous planner.
 
 ---
 

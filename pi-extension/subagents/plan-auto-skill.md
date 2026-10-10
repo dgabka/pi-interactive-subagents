@@ -1,11 +1,11 @@
 ---
-name: plan-auto
+name: ship-auto
 description: >
-  Autonomous planning and implementation workflow. Scouts, plans, executes
+  Autonomous delivery workflow. Scouts, plans, executes
   plan-local todos, and reviews without invoking-user interaction.
 ---
 
-# Autonomous Plan
+# Autonomous Ship
 
 Run this workflow unattended for the supplied task. Do not ask the invoking user questions, request approval, offer choices, or pause at a user gate. Resolve ambiguity with the smallest conventional repository choice and report assumptions at the end.
 

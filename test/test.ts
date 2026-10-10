@@ -1420,35 +1420,35 @@ describe("tmux.ts interpretExitSidecar", () => {
   });
 });
 describe("commands", () => {
-  it("registers /plan-auto and injects its autonomous skill", async () => {
+  it("registers /ship-auto and injects its autonomous skill", async () => {
     const { api, registeredCommands, sentUserMessages } = createMockExtensionApi();
     (subagentsModule as any).default(api);
 
-    const plan = registeredCommands.find((command) => command.name === "plan");
-    const planAuto = registeredCommands.find((command) => command.name === "plan-auto");
-    assert.ok(plan, "expected /plan to remain registered");
-    assert.ok(planAuto, "expected /plan-auto to be registered");
+    const ship = registeredCommands.find((command) => command.name === "ship");
+    const shipAuto = registeredCommands.find((command) => command.name === "ship-auto");
+    assert.ok(ship, "expected /ship to remain registered");
+    assert.ok(shipAuto, "expected /ship-auto to be registered");
 
-    await planAuto.handler("  Add unattended planning  ", { ui: { notify: assert.fail } });
+    await shipAuto.handler("  Add unattended planning  ", { ui: { notify: assert.fail } });
 
     assert.equal(sentUserMessages.length, 1);
-    assert.match(sentUserMessages[0], /<skill name="plan-auto" location="[^"]*plan-auto-skill\.md">/);
+    assert.match(sentUserMessages[0], /<skill name="ship-auto" location="[^"]*plan-auto-skill\.md">/);
     assert.match(sentUserMessages[0], /\n\nAdd unattended planning$/);
-    assert.doesNotMatch(sentUserMessages[0], /<skill name="plan"/);
+    assert.doesNotMatch(sentUserMessages[0], /<skill name="ship"/);
   });
 
-  it("warns rather than injecting /plan-auto without a task", async () => {
+  it("warns rather than injecting /ship-auto without a task", async () => {
     const { api, registeredCommands, sentUserMessages } = createMockExtensionApi();
     const notifications: Array<{ message: string; level: string }> = [];
     (subagentsModule as any).default(api);
 
-    const planAuto = registeredCommands.find((command) => command.name === "plan-auto");
-    assert.ok(planAuto, "expected /plan-auto to be registered");
-    await planAuto.handler("   ", {
+    const shipAuto = registeredCommands.find((command) => command.name === "ship-auto");
+    assert.ok(shipAuto, "expected /ship-auto to be registered");
+    await shipAuto.handler("   ", {
       ui: { notify: (message: string, level: string) => notifications.push({ message, level }) },
     });
 
-    assert.deepEqual(notifications, [{ message: "Usage: /plan-auto <what to build>", level: "warning" }]);
+    assert.deepEqual(notifications, [{ message: "Usage: /ship-auto <what to build>", level: "warning" }]);
     assert.deepEqual(sentUserMessages, []);
   });
 
@@ -2343,7 +2343,7 @@ describe("subagents widget rendering", () => {
   });
 });
 
-describe("plan-auto workflow prompt contract", () => {
+describe("ship-auto workflow prompt contract", () => {
   const skillPath = fileURLToPath(new URL("../pi-extension/subagents/plan-auto-skill.md", import.meta.url));
   const plannerAutoAgentPath = fileURLToPath(new URL("../agents/planner-auto.md", import.meta.url));
   const interactiveSkillPath = fileURLToPath(new URL("../pi-extension/subagents/plan-skill.md", import.meta.url));
@@ -2377,7 +2377,7 @@ describe("plan-auto workflow prompt contract", () => {
     assert.match(planner, /If it already exists, preserve valid planning work on a retry; otherwise write the initial plan before making any todo calls/i);
   });
 
-  it("preserves the separate interactive /plan workflow", () => {
+  it("preserves the separate interactive /ship workflow", () => {
     const interactiveSkill = readFileSync(interactiveSkillPath, "utf8");
     assert.match(interactiveSkill, /agent: "planner"/);
     assert.match(interactiveSkill, /interactive: true/);
