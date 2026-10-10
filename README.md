@@ -47,7 +47,7 @@ Subagent panes are created without stealing keyboard focus. Launch commands targ
 
 ### Extensions
 
-**Subagents** — 5 main-session tools + 4 commands, plus 1 subagent-only tool:
+**Subagents** — 5 main-session tools + 5 commands, plus 1 subagent-only tool:
 
 | Tool                 | Description                                                                                 |
 | -------------------- | ------------------------------------------------------------------------------------------- |
@@ -59,7 +59,8 @@ Subagent panes are created without stealing keyboard focus. Launch commands targ
 
 | Command                    | Description                                      |
 | -------------------------- | ------------------------------------------------ |
-| `/plan`                    | Start a full planning workflow                   |
+| `/plan`                    | Start a user-collaborative planning workflow     |
+| `/plan-auto <task>`        | Plan, implement, and review autonomously         |
 | `/iterate`                 | Fork into a subagent for quick fixes             |
 | `/branch`                  | Open an independent session copy in a tmux pane  |
 | `/subagent <agent> <task>` | Spawn a named agent directly                     |
@@ -89,11 +90,12 @@ This is intentionally breaking: selector-less calls fail. Legacy `.pi/todos.json
 | Agent             | Model                | Role                                                                                     |
 | ----------------- | -------------------- | ---------------------------------------------------------------------------------------- |
 | **planner**       | GPT-5.6 Sol (medium) | Brainstorming — clarifies requirements, explores approaches, writes plans, creates todos |
+| **planner-auto**  | GPT-5.6 Sol (medium) | Autonomous planning — records assumptions, writes plans, creates executable todos        |
 | **scout**         | GPT-5.6 Luna         | Fast codebase reconnaissance — maps files, patterns, conventions                         |
 | **worker**        | GPT-5.6 Terra        | Implements tasks from todos — writes code, runs tests, makes polished commits            |
 | **reviewer**      | GPT-5.6 Sol (medium) | Reviews code for bugs, security issues, correctness                                      |
 
-Agent discovery follows priority: **project-local** (`.pi/agents/`) > **global** (`~/.pi/agent/agents/`) > **package-bundled**. Override any bundled agent by placing your own version in the higher-priority location.
+Agent discovery follows priority: **project-local** (`.pi/agents/`) > **global** (`~/.pi/agent/agents/`) > **package-bundled**. Override any bundled agent, including `planner-auto`, by placing your own version in the higher-priority location.
 
 ---
 
@@ -260,6 +262,22 @@ Tab/window titles update to show current phase:
 🔍 Investigating: dark mode → 💬 Planning: dark mode
 → 🔨 Executing: 1/3 → 🔎 Reviewing → ✅ Done
 ```
+
+---
+
+## The `/plan-auto` Workflow
+
+`/plan-auto <task>` runs the same broad lifecycle unattended: scout → autonomous planner → sequential workers → reviewer. It never pauses for invoking-user questions or approval. The planner chooses the smallest conventional answer to ambiguity and records its assumptions in the plan.
+
+```text
+/plan-auto Add a dark mode toggle to the settings page
+```
+
+The workflow stores its plan, scout context, todos, and reviews under `.pi/plans/YYYY-MM-DD-<name>/`, so interrupted or failed work remains available for inspection or continuation. Each agent phase gets one attempt plus at most two retries; before continuing, retries inspect existing artifacts, selected-plan todos, and repository state rather than discarding work or duplicating completed todos.
+
+Workers run one at a time in todo order. After the initial review, the workflow may run one sequential P0/P1 remediation cycle followed by one final review; P2/P3 findings are reported without automatic fixes. If a phase still fails after its bounded retries, the terminal report identifies the failed phase and preserves its artifacts and todo state.
+
+Use `/plan` when you want to collaborate with the interactive planner, review the plan, and decide when execution proceeds. Normal agent discovery precedence still applies, so a project-local or global `planner-auto` definition can override the bundled autonomous planner.
 
 ---
 
