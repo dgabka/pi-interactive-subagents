@@ -20,7 +20,6 @@ export type SubagentActivityEvent =
   | "tool_execution_update"
   | "tool_result"
   | "tool_execution_end"
-  | "caller_ping"
   | "subagent_done"
   | "session_shutdown";
 
@@ -70,7 +69,6 @@ export interface SubagentActivityRecorder {
   toolExecutionUpdate(toolCallId?: string, toolName?: string): void;
   toolResult(toolCallId?: string, toolName?: string): void;
   toolExecutionEnd(toolCallId?: string, toolName?: string): void;
-  callerPing(): void;
   subagentDone(): void;
   sessionShutdown(reason: SubagentShutdownReason): void;
 }
@@ -95,7 +93,6 @@ const KNOWN_EVENTS = new Set<SubagentActivityEvent>([
   "tool_execution_update",
   "tool_result",
   "tool_execution_end",
-  "caller_ping",
   "subagent_done",
   "session_shutdown",
 ]);
@@ -239,7 +236,6 @@ function createNoopRecorder(): SubagentActivityRecorder {
     toolExecutionUpdate() {},
     toolResult() {},
     toolExecutionEnd() {},
-    callerPing() {},
     subagentDone() {},
     sessionShutdown() {},
   };
@@ -496,9 +492,6 @@ export function createSubagentActivityRecorder(params: {
         current.toolEndedAt = observedAt;
         refreshActiveScope(current);
       }, "immediate");
-    },
-    callerPing() {
-      markDone("caller_ping");
     },
     subagentDone() {
       markDone("subagent_done");

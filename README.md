@@ -47,23 +47,19 @@ Subagent panes are created without stealing keyboard focus. Launch commands targ
 
 ### Extensions
 
-**Subagents** — 5 main-session tools + 5 commands, plus 1 subagent-only tool:
+**Subagents** — 3 main-session tools + 3 commands, plus 1 subagent-only tool:
 
 | Tool                 | Description                                                                                 |
 | -------------------- | ------------------------------------------------------------------------------------------- |
 | `subagent`           | Spawn a sub-agent in a dedicated tmux pane (async — returns immediately)                    |
-| `subagent_interrupt` | Interrupt a running Pi-backed subagent's current turn                                       |
 | `subagents_list`     | List available agent definitions                                                            |
-| `subagent_resume`    | Resume a previous sub-agent session (async)                                                 |
 | `todo`               | Plan-local todo files for planner and workers                                               |
 
 | Command                    | Description                                      |
 | -------------------------- | ------------------------------------------------ |
 | `/ship`                    | Start a user-collaborative delivery workflow     |
 | `/ship-auto <task>`        | Plan, implement, and review autonomously         |
-| `/iterate`                 | Fork into a subagent for quick fixes             |
 | `/branch`                  | Open an independent session copy in a tmux pane  |
-| `/subagent <agent> <task>` | Spawn a named agent directly                     |
 
 ### Plan-local todos
 
@@ -141,7 +137,7 @@ The widget tracks each Pi-backed sub-agent from a child-written runtime snapshot
 
 These labels are no longer derived from session-file growth. Session JSONL is still used for transcript, resume, lineage, and result extraction, but Pi-backed liveness now comes from a small activity snapshot written by the child extension. A fixed internal watchdog marks a run as `stalled` when valid snapshots never appear, stop being readable, or stop matching the current child; valid long-running `active` or `waiting` states do not become `stalled` just because time passes. When a run enters `stalled` or recovers from it, the parent agent receives a steer message so it can react. All other status transitions stay in the widget only.
 
-**Interactive subagents stay silent.** Long-running user-driven subagents (e.g. `planner`, or any `/iterate` fork) do not wake the parent session on `stalled`/`recovered` transitions — the user is working directly in the subagent's pane, and a steer message there would just burn an orchestrator turn on a no-op "still waiting" ping. The widget still updates normally, and child snapshots are still recorded/classified regardless of the `interactive` setting. By default, agents with `auto-exit: true` are treated as autonomous and get stall pings; agents without it are treated as interactive and stay quiet. Override per-agent with `interactive: true|false` in frontmatter, or per-spawn with `interactive: true|false` on the tool call.
+**Interactive subagents stay silent.** Long-running user-driven subagents (e.g. `planner`, or any user-driven fork) do not wake the parent session on `stalled`/`recovered` transitions — the user is working directly in the subagent's pane, and a steer message there would just burn an orchestrator turn on a no-op "still waiting" ping. The widget still updates normally, and child snapshots are still recorded/classified regardless of the `interactive` setting. By default, agents with `auto-exit: true` are treated as autonomous and get stall pings; agents without it are treated as interactive and stay quiet. Override per-agent with `interactive: true|false` in frontmatter, or per-spawn with `interactive: true|false` on the tool call.
 
 #### Configuration
 
@@ -170,7 +166,7 @@ cp config.json.example config.json
 subagent({ name: "Scout", agent: "scout", task: "Analyze the codebase..." });
 
 // Force a full-context fork for this spawn
-subagent({ name: "Iterate", fork: true, task: "Fix the bug where..." });
+subagent({ name: "Worker", agent: "worker", task: "Fix the bug where..." });
 
 // Agent defaults can choose a different session-mode via frontmatter
 subagent({ name: "Planner", agent: "planner", task: "Work through the design with me" });
@@ -193,58 +189,6 @@ subagent({ name: "Designer", agent: "game-designer", cwd: "agents/game-designer"
 | `skills`               | string  | —              | Comma-separated skill names                                                                       |
 | `tools`                | string  | —              | Comma-separated tool names                                                                        |
 | `cwd`                  | string  | —              | Working directory for the sub-agent (see [Role Folders](#role-folders))                           |
-
----
-
-## Interrupting a running subagent
-
-Use `subagent_interrupt` to cancel the active turn of a running Pi-backed subagent:
-
-```typescript
-subagent_interrupt({ id: "abcd1234" });
-// or
-subagent_interrupt({ name: "Scout" });
-```
-
-This sends Escape to the child pane, cancelling the in-progress model turn. The subagent session stays alive — the pane, session file, and background polling all remain intact. After the interrupt, the widget immediately moves the child back to `waiting`, and stale pre-interrupt snapshots are ignored. If the child starts work later, newer snapshots return it to `active`; completion, failure, and `caller_ping` still flow through normally.
-
-This is a turn-level interrupt, not a method for forcibly terminating a subagent session.
-
-> **Note:** Only Pi-backed subagents are supported. Claude-backed runs will return an error.
-
----
-
-## caller_ping — Child-to-Parent Help Request
-
-The `caller_ping` tool lets a subagent request help from its parent agent. When called, the child session **exits** and the parent receives a notification with the help message. The parent can then **resume** the child session with a response using `subagent_resume`.
-
-**`caller_ping` parameters:**
-- `message` (required): What you need help with
-
-**`subagent_resume` parameters:**
-- `sessionPath` (required): Path to the child session `.jsonl` file
-- `name` (optional): Display name for the resumed pane (defaults to `Resume`)
-- `message` (optional): Follow-up prompt to send after resuming
-- `autoExit` (optional): Whether the resumed session should auto-exit after its next response. Defaults to `true` for autonomous follow-up work; set `false` when resuming for an interactive handoff.
-
-**Interaction flow:**
-1. Child calls `caller_ping({ message: "Not sure which schema to use" })`
-2. Child session exits (like `subagent_done`)
-3. Parent receives a steer notification: *"Sub-agent Worker needs help: Not sure which schema to use"*
-4. Parent resumes the child session via `subagent_resume` with the response
-5. Child picks up where it left off with the parent's guidance
-
-**Example:**
-```typescript
-// Inside a worker subagent
-await caller_ping({
-  message: "Found two conflicting migration files — should I use v1 or v2?"
-});
-// Session exits here. Parent receives the ping, then resumes this session
-// with guidance like "Use v2, v1 is deprecated"
-```
-
-> **Note:** `caller_ping` is only available inside subagent contexts. Calling it from a standalone pi session returns an error.
 
 ---
 
@@ -289,21 +233,11 @@ Use `/ship` when you want to collaborate with the interactive planner, review th
 
 ---
 
-## The `/iterate` Workflow
-
-For quick, focused work without polluting the main session's context.
-
-```
-/iterate Fix the off-by-one error in the pagination logic
-```
-
-This always forks the current session into a subagent with full conversation context. It does not inherit an agent default `session-mode`. Make the fix, verify it, and exit to return. The main session gets a summary of what was done.
-
 ### Branching into an independent session
 
 Run `/branch` to copy the complete active conversation path into a new tmux pane. The new ordinary Pi session opens with an empty editor and is independent immediately: it is not a subagent, is not tracked, and sends no completion notification. Its work and conversation history are not merged back into the parent.
 
-Unlike task-oriented `/iterate`, `/branch` takes no task or initial prompt and leaves the branch entirely user-managed.
+`/branch` takes no task or initial prompt and leaves the branch entirely user-managed.
 
 ---
 
@@ -359,7 +293,7 @@ Choose how a subagent session starts:
 
 `lineage-only` is useful when you want session discovery and fork lineage UX to show the relationship later, but you do **not** want the child to inherit the parent's turns.
 
-`fork: true` on the tool call always forces the `fork` mode for that specific spawn. `/iterate` uses this explicit override on purpose.
+`fork: true` on the tool call always forces the `fork` mode for that specific spawn.
 
 ```yaml
 ---
@@ -381,7 +315,7 @@ When set to `true`, the agent session shuts down automatically as soon as the ag
 **When to use:**
 
 - ✅ Autonomous agents (scout, worker, reviewer) that run to completion
-- ❌ Interactive agents (planner, iterate) where the user drives the session
+- ❌ Interactive agents (such as planner) where the user drives the session
 
 ```yaml
 ---
@@ -394,7 +328,7 @@ auto-exit: true
 
 Controls whether status transitions (`stalled`, `recovered`) wake the parent session with a steer message.
 
-**Default:** the inverse of `auto-exit`. Autonomous agents (`auto-exit: true`) are non-interactive and ping the parent on stall/recovery; agents without `auto-exit` are interactive and stay quiet. Bare spawns with no agent defs (e.g. `/iterate` with `fork: true`) are treated as interactive.
+**Default:** the inverse of `auto-exit`. Autonomous agents (`auto-exit: true`) are non-interactive and ping the parent on stall/recovery; agents without `auto-exit` are interactive and stay quiet. Bare spawns with no agent defs are treated as interactive.
 
 **Why it exists:** Interactive agents can run for minutes or hours while the user thinks, types, and reads in the subagent's pane. Child snapshots still update the widget, but stalled/recovered supervision messages rarely need to wake the parent for user-driven sessions. Skipping the steer keeps the parent quiet until the child actually finishes.
 
@@ -424,7 +358,7 @@ By default, every sub-agent can spawn further sub-agents. Control this with fron
 
 ### `spawning: false`
 
-Denies all subagent lifecycle tools (`subagent`, `subagent_interrupt`, `subagents_list`, `subagent_resume`):
+Denies all subagent lifecycle tools (`subagent`, `subagents_list`):
 
 ```yaml
 ---
@@ -519,7 +453,7 @@ tmux new -A -s pi 'pi'
 
 ## Acknowledgements
 
-The sub-agent status supervision and turn-only interruption features were inspired by [RepoPrompt](https://repoprompt.com/)'s sub-agent snapshot polling and run cancellation features.
+The sub-agent status supervision was inspired by [RepoPrompt](https://repoprompt.com/)'s sub-agent snapshot polling and run cancellation features.
 
 ---
 

@@ -21,7 +21,6 @@ import {
   sendLongCommand,
   pollForExit,
   closeSurface,
-  sendEscape,
   shellEscape,
   renameCurrentTab,
   renameWorkspace,
@@ -40,7 +39,6 @@ import {
   capStatusLines,
   classifyStatus,
   createStatusState,
-  forceStatusAfterInterrupt,
   formatStatusAggregate,
   formatTransitionLine,
   observeStatus,
@@ -163,9 +161,7 @@ interface ListedAgentDefinition extends AgentDefinition {
 /** Tools that are gated by `spawning: false` */
 const SPAWNING_TOOLS = new Set([
   "subagent",
-  "subagent_interrupt",
   "subagents_list",
-  "subagent_resume",
 ]);
 
 /**
@@ -352,12 +348,10 @@ function resolveLaunchBehavior(
  *   3. Default: the inverse of `auto-exit`. Agents that auto-exit are
  *      autonomous (scout, worker, reviewer) and the parent session should be
  *      woken on stall/recovery transitions. Agents that don't auto-exit are
- *      driven by the user in their own pane (planner, iterate/fork) and
- *      stall pings are noise.
+ *      driven by the user in their own pane (planner) and stall pings are noise.
  *
- * When no agent defs exist at all (bare `subagent({ name, task })` call,
- * typical for `/iterate` with `fork: true`), `autoExit` is undefined and the
- * subagent is treated as interactive — matching the intent of iterate.
+ * When no agent defs exist, `autoExit` is undefined and the subagent
+ * is treated as interactive.
  */
 function resolveEffectiveInteractive(
   params: Static<typeof SubagentParams>,
@@ -456,7 +450,7 @@ function resolveResultPresentation(
   name: string,
 ): string {
   const sessionRef = result.sessionFile
-    ? `\n\nSession: ${result.sessionFile}\nResume: pi --session ${result.sessionFile}`
+    ? `\n\nSession: ${result.sessionFile}\nResume manually: pi --session ${result.sessionFile}`
     : "";
 
   if (result.errorMessage) {
@@ -468,8 +462,7 @@ function resolveResultPresentation(
       `Sub-agent "${name}" failed after ${formatElapsed(result.elapsed)} ` +
       `(provider/agent error — auto-retry exhausted).\n\n` +
       `Error: ${result.errorMessage}\n\n` +
-      `The subagent did not produce a result. You can retry by spawning a new ` +
-      `subagent or resume the session with subagent_resume.${sessionRef}`
+      `The subagent did not produce a result. Retry by spawning a new subagent.${sessionRef}`
     );
   }
 
@@ -492,7 +485,6 @@ interface SubagentResult {
   error?: string;
   /** Provider/agent error message when auto-retry exhausted (overload, rate limit, etc.). */
   errorMessage?: string;
-  ping?: { name: string; message: string };
 }
 
 /**
@@ -672,7 +664,7 @@ function updateWidget() {
  * first positional message so that /skill: args land in messages[1..] and arrive
  * as standalone prompts in the child session.
  */
-const SUBAGENT_CONTROL_TOOLS = ["caller_ping", "subagent_done"] as const;
+const SUBAGENT_CONTROL_TOOLS = ["subagent_done"] as const;
 
 /**
  * Build the child --tools allowlist.
@@ -761,90 +753,6 @@ function observeRunningSubagent(running: RunningSubagent, observedAt = Date.now(
   }, observedAt);
 }
 
-function resolveInterruptTarget(params: { id?: string; name?: string }):
-  | { running: RunningSubagent }
-  | { error: string } {
-  const requestedId = params.id?.trim();
-  if (requestedId) {
-    const running = runningSubagents.get(requestedId);
-    return running ? { running } : { error: `No running subagent with id "${requestedId}".` };
-  }
-
-  const requestedName = params.name?.trim();
-  if (!requestedName) {
-    return { error: "Provide a running subagent id or exact display name." };
-  }
-
-  const matches = Array.from(runningSubagents.values()).filter((running) => running.name === requestedName);
-  if (matches.length === 1) return { running: matches[0] };
-  if (matches.length === 0) {
-    return { error: `No running subagent named "${requestedName}".` };
-  }
-
-  const candidates = matches.map((running) => `${running.name} [${running.id}]`).join(", ");
-  return { error: `Ambiguous subagent name "${requestedName}". Matches: ${candidates}` };
-}
-
-function requestSubagentInterrupt(
-  running: RunningSubagent,
-  sendEscapeKey: (surface: string) => void = sendEscape,
-): { ok: true } | { error: string } {
-  try {
-    sendEscapeKey(running.surface);
-    return { ok: true };
-  } catch (error: any) {
-    return {
-      error:
-        `Failed to send Escape to subagent "${running.name}" via tmux: ` +
-        `${error?.message ?? String(error)}`,
-    };
-  }
-}
-
-function handleSubagentInterrupt(
-  params: { id?: string; name?: string },
-  sendEscapeKey: (surface: string) => void = sendEscape,
-) {
-  const resolved = resolveInterruptTarget(params);
-  if ("error" in resolved) {
-    return {
-      content: [{ type: "text" as const, text: resolved.error }],
-      details: { error: resolved.error },
-    };
-  }
-
-  const running = resolved.running;
-  if (running.cli === "claude") {
-    return {
-      content: [{
-        type: "text" as const,
-        text:
-          "Turn-only Escape interrupt is currently supported only for Pi-backed subagents. Claude-backed semantics have not been verified yet.",
-      }],
-      details: { error: "claude interrupt unsupported", id: running.id, name: running.name },
-    };
-  }
-
-  const now = Date.now();
-  observeRunningSubagent(running, now);
-
-  const interruption = requestSubagentInterrupt(running, sendEscapeKey);
-  if ("error" in interruption) {
-    return {
-      content: [{ type: "text" as const, text: interruption.error }],
-      details: { error: interruption.error, id: running.id, name: running.name },
-    };
-  }
-
-  running.statusState = forceStatusAfterInterrupt(running.statusState, now);
-  updateWidget();
-
-  return {
-    content: [{ type: "text" as const, text: `Interrupt requested for subagent "${running.name}".` }],
-    details: { id: running.id, name: running.name, status: "interrupt_requested" },
-  };
-}
-
 function startStatusRefresh(pi: ExtensionAPI) {
   if (!statusConfig.enabled || statusInterval) return;
 
@@ -896,11 +804,6 @@ function startStatusRefresh(pi: ExtensionAPI) {
   }, 1000);
 
   (globalThis as any)[STATUS_INTERVAL_KEY] = statusInterval;
-}
-
-function resolveResumeLaunchBehavior(params: { autoExit?: boolean }): { autoExit: boolean; interactive: boolean } {
-  const autoExit = params.autoExit ?? true;
-  return { autoExit, interactive: !autoExit };
 }
 
 type BranchContext = Pick<ExtensionContext, "cwd" | "sessionManager">;
@@ -1009,11 +912,7 @@ export const __test__ = {
   formatWidgetRightLabel,
   observeRunningSubagent,
   resolveDenyTools,
-  resolveInterruptTarget,
-  requestSubagentInterrupt,
-  handleSubagentInterrupt,
   resolveResultPresentation,
-  resolveResumeLaunchBehavior,
   createBranchedSession,
   buildBranchedSessionCommand,
   launchBranchedSession,
@@ -1433,7 +1332,6 @@ async function watchSubagent(
       sessionFile,
       exitCode: result.exitCode,
       elapsed,
-      ping: result.ping,
       ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
     };
   } catch (err: any) {
@@ -1627,26 +1525,6 @@ export default function subagentsExtension(pi: ExtensionAPI) {
           .then((result) => {
             updateWidget(); // reflect removal from Map immediately
 
-            if (result.ping) {
-              // Subagent is requesting help — steer a ping message with session path for resume
-              const sessionRef = `\n\nSession: ${result.sessionFile}\nResume: pi --session ${result.sessionFile}`;
-              pi.sendMessage(
-                {
-                  customType: "subagent_ping",
-                  content: `Sub-agent "${result.ping.name}" needs help (${formatElapsed(result.elapsed)}):\n\n${result.ping.message}${sessionRef}`,
-                  display: true,
-                  details: {
-                    name: result.ping.name,
-                    message: result.ping.message,
-                    agent: running.agent,
-                    sessionFile: result.sessionFile,
-                  },
-                },
-                { triggerTurn: true, deliverAs: "steer" },
-              );
-              return;
-            }
-
             const presentation = resolveResultPresentation(result, running.name);
 
             pi.sendMessage(
@@ -1761,58 +1639,6 @@ export default function subagentsExtension(pi: ExtensionAPI) {
       },
     });
 
-  // ── subagent_interrupt tool ──
-  if (shouldRegister("subagent_interrupt"))
-    pi.registerTool({
-      name: "subagent_interrupt",
-      label: "Interrupt Subagent",
-      description:
-        "Send Escape to the active turn of a currently running Pi-backed subagent. " +
-        "The child pane, session, watcher, and running entry remain alive; this returns only a local acknowledgement " +
-        "and does not emit a subagent_result solely because of this request.",
-      promptSnippet:
-        "Send Escape to the active turn of a currently running Pi-backed subagent. " +
-        "The child pane, session, watcher, and running entry remain alive; this returns only a local acknowledgement " +
-        "and does not emit a subagent_result solely because of this request.",
-      parameters: Type.Object({
-        id: Type.Optional(Type.String({ description: "Exact running subagent id" })),
-        name: Type.Optional(Type.String({ description: "Exact running subagent display name" })),
-      }),
-
-      async execute(_toolCallId, params) {
-        return handleSubagentInterrupt(params);
-      },
-
-      renderCall(args, theme) {
-        const target = args.id ? `${args.id}` : args.name ?? "(unknown)";
-        return new Text(
-          theme.fg("accent", "▸") +
-            " " +
-            theme.fg("toolTitle", theme.bold(target)) +
-            theme.fg("dim", " — interrupt turn"),
-          0,
-          0,
-        );
-      },
-
-      renderResult(result, _opts, theme) {
-        const details = result.details as any;
-        if (details?.status === "interrupt_requested") {
-          return new Text(
-            theme.fg("accent", "▸") +
-              " " +
-              theme.fg("toolTitle", theme.bold(details.name ?? details.id ?? "subagent")) +
-              theme.fg("dim", " — interrupt requested"),
-            0,
-            0,
-          );
-        }
-
-        const text = typeof result.content[0]?.text === "string" ? result.content[0].text : "";
-        return new Text(theme.fg("dim", text), 0, 0);
-      },
-    });
-
   // ── subagents_list tool ──
   if (shouldRegister("subagents_list"))
     pi.registerTool({
@@ -1869,309 +1695,9 @@ export default function subagentsExtension(pi: ExtensionAPI) {
 
 
 
-  // ── subagent_resume tool ──
-  if (shouldRegister("subagent_resume"))
-    pi.registerTool({
-      name: "subagent_resume",
-      label: "Resume Subagent",
-      description:
-        "Resume a previous sub-agent session in a new tmux pane. " +
-        "This is a fire-and-forget async tool: the call returns immediately with only an acknowledgement. " +
-        "When the resumed sub-agent finishes, the harness AUTOMATICALLY delivers its result as a steer message that wakes you up and starts a new turn — you do not need to do anything to receive it. " +
-        "DO NOT write polling loops, sleep/wait commands, tail/watch scripts, or repeatedly read session/log files to detect completion. DO NOT poll for status. All of that is wasted work — the harness handles delivery for you. " +
-        "DO NOT fabricate or assume results. After resuming, either end your turn or work on other independent tasks; the harness will wake you when the result is ready. " +
-        "Use when a sub-agent was cancelled or needs follow-up work.",
-      promptSnippet:
-        "Resume a previous sub-agent session in a new tmux pane. " +
-        "This is a fire-and-forget async tool: the call returns immediately with only an acknowledgement. " +
-        "When the resumed sub-agent finishes, the harness AUTOMATICALLY delivers its result as a steer message that wakes you up and starts a new turn — you do not need to do anything to receive it. " +
-        "DO NOT write polling loops, sleep/wait commands, tail/watch scripts, or repeatedly read session/log files to detect completion. DO NOT poll for status. All of that is wasted work — the harness handles delivery for you. " +
-        "DO NOT fabricate or assume results. After resuming, either end your turn or work on other independent tasks; the harness will wake you when the result is ready. " +
-        "Use when a sub-agent was cancelled or needs follow-up work.",
-      parameters: Type.Object({
-        sessionPath: Type.String({ description: "Path to the session .jsonl file to resume" }),
-        name: Type.Optional(
-          Type.String({ description: "Display name for the terminal tab. Default: 'Resume'" }),
-        ),
-        message: Type.Optional(
-          Type.String({
-            description: "Optional message to send after resuming (e.g. follow-up instructions)",
-          }),
-        ),
-        autoExit: Type.Optional(
-          Type.Boolean({
-            description:
-              "Whether the resumed session should automatically exit after completing its response. Defaults to true for autonomous follow-up work; set false for interactive resumed sessions.",
-          }),
-        ),
-      }),
-
-      renderCall(args, theme) {
-        const name = args.name ?? "Resume";
-        const text =
-          "▸ " +
-          theme.fg("toolTitle", theme.bold(name)) +
-          theme.fg("dim", " — resuming session");
-        return new Text(text, 0, 0);
-      },
-
-      renderResult(result, _opts, theme) {
-        const details = result.details as any;
-        const name = details?.name ?? "Resume";
-
-        if (details?.status === "started") {
-          return new Text(
-            theme.fg("accent", "▸") +
-              " " +
-              theme.fg("toolTitle", theme.bold(name)) +
-              theme.fg("dim", " — resumed"),
-            0,
-            0,
-          );
-        }
-
-        // Fallback
-        const text = typeof result.content[0]?.text === "string" ? result.content[0].text : "";
-        return new Text(theme.fg("dim", text), 0, 0);
-      },
-
-      async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-        const name = params.name ?? "Resume";
-        const { autoExit, interactive } = resolveResumeLaunchBehavior(params);
-        const startTime = Date.now();
-        const id = Math.random().toString(16).slice(2, 10);
-
-        if (!isTmuxSession()) {
-          return tmuxUnavailableResult();
-        }
-
-        if (!existsSync(params.sessionPath)) {
-          return {
-            content: [
-              { type: "text", text: `Error: session file not found: ${params.sessionPath}` },
-            ],
-            details: { error: "session not found" },
-          };
-        }
-
-        // Record entry count before resuming so we can extract new messages
-        const entryCountBefore = getNewEntries(params.sessionPath, 0).length;
-
-        const surface = createSurface(name);
-        await new Promise<void>((resolve) => setTimeout(resolve, getShellReadyDelayMs()));
-
-        // Build pi resume command
-        const parts = ["pi", "--session", shellEscape(params.sessionPath)];
-
-        // Load subagent-done extension so the agent can self-terminate if needed
-        const subagentDonePath = join(SUBAGENTS_DIR, "subagent-done.ts");
-        parts.push("-e", shellEscape(subagentDonePath));
-
-        const sessionId = ctx.sessionManager.getSessionId();
-        const artifactDir = getArtifactDir(ctx.sessionManager.getSessionDir(), sessionId);
-        const activityFile = getSubagentActivityFile(artifactDir, id);
-        mkdirSync(dirname(activityFile), { recursive: true });
-
-        let resumeMsgFile: string | undefined;
-        if (params.message) {
-          const msgTimestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-          resumeMsgFile = join(
-            artifactDir,
-            "subagent-resume",
-            `${name
-              .toLowerCase()
-              .replace(/[^a-z0-9\s-]/g, "")
-              .replace(/\s+/g, "-")
-              .replace(/-+/g, "-")
-              .replace(/^-|-$/g, "") || "resume"}-${msgTimestamp}.md`,
-          );
-          mkdirSync(dirname(resumeMsgFile), { recursive: true });
-          writeFileSync(resumeMsgFile, params.message, "utf8");
-          parts.push(shellEscape(`@${resumeMsgFile}`));
-        }
-
-        // Build env prefix — propagate PI_CODING_AGENT_DIR for config isolation
-        const resumeEnvParts: string[] = [];
-        if (process.env.PI_CODING_AGENT_DIR) {
-          resumeEnvParts.push(`PI_CODING_AGENT_DIR=${shellEscape(process.env.PI_CODING_AGENT_DIR)}`);
-        }
-        resumeEnvParts.push(`PI_SUBAGENT_NAME=${shellEscape(name)}`);
-        resumeEnvParts.push(`PI_SUBAGENT_SESSION=${shellEscape(params.sessionPath)}`);
-        resumeEnvParts.push(`PI_SUBAGENT_ID=${shellEscape(id)}`);
-        resumeEnvParts.push(`PI_SUBAGENT_ACTIVITY_FILE=${shellEscape(activityFile)}`);
-        if (autoExit) {
-          resumeEnvParts.push(`PI_SUBAGENT_AUTO_EXIT=1`);
-        }
-        const resumeEnvPrefix = resumeEnvParts.join(" ") + " ";
-
-        const command = `${resumeEnvPrefix}${parts.join(" ")}; echo '__SUBAGENT_DONE_'$?'__'`;
-        const launchScriptFile = join(
-          artifactDir,
-          "subagent-scripts",
-          `${name
-            .toLowerCase()
-            .replace(/[^a-z0-9\s-]/g, "")
-            .replace(/\s+/g, "-")
-            .replace(/-+/g, "-")
-            .replace(/^-|-$/g, "") || "resume"}-resume-${Date.now()}.sh`,
-        );
-        sendLongCommand(surface, command, {
-          scriptPath: launchScriptFile,
-          scriptPreamble: [
-            `# Subagent resume script for ${name}`,
-            `# Generated: ${new Date().toISOString()}`,
-            `# Session: ${params.sessionPath}`,
-            `# Surface: ${surface}`,
-            ...(resumeMsgFile ? [`# Resume message file: ${resumeMsgFile}`] : []),
-          ].join("\n"),
-        });
-
-        // Register as a running subagent for widget tracking
-        const running: RunningSubagent = {
-          id,
-          name,
-          task: params.message ?? "resumed session",
-          surface,
-          startTime,
-          sessionFile: params.sessionPath,
-          launchScriptFile,
-          activityFile,
-          interactive,
-          statusState: createStatusState({
-            source: "pi",
-            startTimeMs: startTime,
-          }),
-        };
-        runningSubagents.set(id, running);
-        startWidgetRefresh();
-        startStatusRefresh(pi);
-
-        // Fire-and-forget watcher
-        const watcherAbort = new AbortController();
-        running.abortController = watcherAbort;
-
-        watchSubagent(running, watcherAbort.signal)
-          .then((result) => {
-            updateWidget();
-
-            if (result.ping) {
-              const sessionRef = `\n\nSession: ${params.sessionPath}\nResume: pi --session ${params.sessionPath}`;
-              pi.sendMessage(
-                {
-                  customType: "subagent_ping",
-                  content: `Sub-agent "${result.ping.name}" needs help (${formatElapsed(result.elapsed)}):\n\n${result.ping.message}${sessionRef}`,
-                  display: true,
-                  details: {
-                    name: result.ping.name,
-                    message: result.ping.message,
-                    sessionFile: params.sessionPath,
-                  },
-                },
-                { triggerTurn: true, deliverAs: "steer" },
-              );
-              return;
-            }
-
-            const allEntries = getNewEntries(params.sessionPath, entryCountBefore);
-            const summary = findLastAssistantMessage(allEntries) ??
-              (result.errorMessage
-                ? `Subagent error: ${result.errorMessage}`
-                : result.exitCode !== 0
-                  ? `Resumed session exited with code ${result.exitCode}`
-                  : "Resumed session exited without new output");
-            const presentation = resolveResultPresentation(
-              { ...result, summary, sessionFile: params.sessionPath },
-              name,
-            );
-
-            pi.sendMessage(
-              {
-                customType: "subagent_result",
-                content: presentation,
-                display: true,
-                details: {
-                  name,
-                  task: params.message ?? "resumed session",
-                  exitCode: result.exitCode,
-                  elapsed: result.elapsed,
-                  sessionFile: params.sessionPath,
-                  ...(result.errorMessage ? { errorMessage: result.errorMessage } : {}),
-                },
-              },
-              { triggerTurn: true, deliverAs: "steer" },
-            );
-          })
-          .catch((err) => {
-            updateWidget();
-            pi.sendMessage(
-              {
-                customType: "subagent_result",
-                content: `Resume error: ${err?.message ?? String(err)}`,
-                display: true,
-                details: { name, error: err?.message },
-              },
-              { triggerTurn: true, deliverAs: "steer" },
-            );
-          });
-
-        return {
-          content: [{ type: "text", text: `Session "${name}" resumed.` }],
-          details: {
-            id,
-            name,
-            sessionPath: params.sessionPath,
-            launchScriptFile,
-            status: "started",
-          },
-        };
-      },
-    });
-
   pi.registerCommand("branch", {
     description: "Open an independent copy of this session in a tmux pane",
     handler: handleBranchCommand,
-  });
-
-  // /iterate command — fork the session into a subagent
-  pi.registerCommand("iterate", {
-    description: "Fork session into a subagent for focused work (bugfixes, iteration)",
-    handler: async (args, _ctx) => {
-      const task = args.trim() || "";
-      const toolCall = task
-        ? `Use subagent to fork a session. fork: true, name: "Iterate", task: ${JSON.stringify(task)}`
-        : `Use subagent to fork a session. fork: true, name: "Iterate", task: "The user wants to do some hands-on work. Help them with whatever they need."`;
-      pi.sendUserMessage(toolCall);
-    },
-  });
-
-  // /subagent command — spawn a subagent by name
-  pi.registerCommand("subagent", {
-    description: "Spawn a subagent: /subagent <agent> <task>",
-    handler: async (args, ctx) => {
-      const trimmed = args.trim();
-      if (!trimmed) {
-        ctx.ui.notify("Usage: /subagent <agent> [task]", "warning");
-        return;
-      }
-
-      const spaceIdx = trimmed.indexOf(" ");
-      const agentName = spaceIdx === -1 ? trimmed : trimmed.slice(0, spaceIdx);
-      const task = spaceIdx === -1 ? "" : trimmed.slice(spaceIdx + 1).trim();
-
-      const defs = loadAgentDefaults(agentName);
-      if (!defs) {
-        ctx.ui.notify(
-          `Agent "${agentName}" not found in ~/.pi/agent/agents/ or .pi/agents/`,
-          "error",
-        );
-        return;
-      }
-
-      const taskText = task || `You are the ${agentName} agent. Wait for instructions.`;
-      const displayName = agentName[0].toUpperCase() + agentName.slice(1);
-      const toolCall = `Use subagent with agent: "${agentName}", name: "${displayName}", task: ${JSON.stringify(taskText)}`;
-      pi.sendUserMessage(toolCall);
-    },
   });
 
   // ── subagent_result message renderer ──
@@ -2275,42 +1801,6 @@ export default function subagentsExtension(pi: ExtensionAPI) {
         }
 
         const box = new Box(1, 1, (text: string) => theme.bg("customMessageBg", text));
-        box.addChild(new Text(contentLines.join("\n"), 0, 0));
-        return ["", ...box.render(width)];
-      },
-    };
-  });
-
-  // ── subagent_ping message renderer ──
-  pi.registerMessageRenderer("subagent_ping", (message, options, theme) => {
-    const details = message.details as any;
-    if (!details) return undefined;
-
-    return {
-      render(width: number): string[] {
-        const name = details.name ?? "subagent";
-        const agentTag = details.agent ? theme.fg("dim", ` (${details.agent})`) : "";
-        const bgFn = (text: string) => theme.bg("customMessageBg", text);
-
-        const icon = theme.fg("accent", "?");
-        const header = `${icon} ${theme.fg("toolTitle", theme.bold(name))}${agentTag} ${theme.fg("dim", "— needs help")}`;
-
-        const contentLines = [header];
-
-        if (options.expanded) {
-          contentLines.push("");
-          contentLines.push(details.message ?? "");
-          if (details.sessionFile) {
-            contentLines.push("");
-            contentLines.push(theme.fg("dim", `Session: ${details.sessionFile}`));
-          }
-        } else {
-          const preview = (details.message ?? "").split("\n")[0].slice(0, width - 10);
-          contentLines.push(theme.fg("dim", preview));
-          contentLines.push(theme.fg("muted", keyHint("app.tools.expand", "to expand")));
-        }
-
-        const box = new Box(1, 1, bgFn);
         box.addChild(new Text(contentLines.join("\n"), 0, 0));
         return ["", ...box.render(width)];
       },

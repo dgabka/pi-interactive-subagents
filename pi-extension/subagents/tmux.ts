@@ -134,16 +134,12 @@ export function closeSurface(surface: string): void {
 }
 
 export interface PollResult {
-  reason: "done" | "ping" | "sentinel" | "error";
+  reason: "done" | "sentinel" | "error";
   exitCode: number;
-  ping?: { name: string; message: string };
   errorMessage?: string;
 }
 
 function interpretExitSidecar(data: any): PollResult {
-  if (data?.type === "ping") {
-    return { reason: "ping", exitCode: 0, ping: { name: data.name, message: data.message } };
-  }
   if (data?.type === "error") {
     const errorMessage =
       typeof data.errorMessage === "string" && data.errorMessage.trim()

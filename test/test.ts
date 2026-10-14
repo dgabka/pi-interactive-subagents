@@ -26,7 +26,6 @@ import {
   capStatusLines,
   classifyStatus,
   createStatusState,
-  forceStatusAfterInterrupt,
   formatStatusAggregate,
   formatStatusLine,
   formatTransitionLine,
@@ -723,31 +722,6 @@ describe("status.ts", () => {
     assert.equal(snapshot.statusLabel, null);
   });
 
-  it("forces an active state to waiting after interrupt", () => {
-    const now = 20_000;
-    let state = createStatusState({ source: "pi", startTimeMs: 0 });
-    state = observeStatus(state, {
-      snapshot: "present",
-      updatedAt: 5_000,
-      sequence: 1,
-      phase: "active",
-      active: true,
-      activeScope: "tool",
-      activeSince: 5_000,
-      activityLabel: "bash",
-    }, 5_000);
-
-    assert.equal(classifyStatus(state, now).kind, "active");
-
-    const forced = forceStatusAfterInterrupt(state, now);
-    const snapshot = classifyStatus(forced, now);
-
-    assert.equal(snapshot.kind, "waiting");
-    assert.equal(snapshot.activityLabel, "interrupted");
-    assert.equal(snapshot.waitingDurationText, "0s");
-    assert.equal(forced.activeNow, false);
-  });
-
   it("orders same-millisecond snapshots by sequence", () => {
     let state = createStatusState({ source: "pi", startTimeMs: 0 });
     state = observeStatus(state, {
@@ -804,63 +778,6 @@ describe("status.ts", () => {
     const snapshot = classifyStatus(state, 11_000);
     assert.equal(snapshot.kind, "active");
     assert.equal(snapshot.statusLabel, null);
-  });
-
-  it("ignores stale and exact old snapshots after interrupt and accepts newer snapshots", () => {
-    let state = createStatusState({ source: "pi", startTimeMs: 0 });
-    state = observeStatus(state, {
-      snapshot: "present",
-      updatedAt: 5_000,
-      sequence: 1,
-      phase: "active",
-      active: true,
-      activeScope: "tool",
-      activeSince: 5_000,
-      activityLabel: "bash",
-    }, 5_000);
-    state = forceStatusAfterInterrupt(state, 20_000);
-
-    const stale = observeStatus(state, {
-      snapshot: "present",
-      updatedAt: 5_000,
-      sequence: 1,
-      phase: "active",
-      active: true,
-      activeScope: "tool",
-      activeSince: 5_000,
-      activityLabel: "bash",
-    }, 21_000);
-    let snapshot = classifyStatus(stale, 21_000);
-    assert.equal(snapshot.kind, "waiting");
-    assert.equal(snapshot.activityLabel, "interrupted");
-
-    const sameTimestamp = observeStatus(stale, {
-      snapshot: "present",
-      updatedAt: 20_000,
-      sequence: 1,
-      phase: "active",
-      active: true,
-      activeScope: "tool",
-      activeSince: 20_000,
-      activityLabel: "bash",
-    }, 22_000);
-    snapshot = classifyStatus(sameTimestamp, 22_000);
-    assert.equal(snapshot.kind, "waiting");
-    assert.equal(snapshot.activityLabel, "interrupted");
-
-    const resumed = observeStatus(sameTimestamp, {
-      snapshot: "present",
-      sequence: 2,
-      updatedAt: 25_000,
-      phase: "active",
-      active: true,
-      activeScope: "streaming",
-      activeSince: 25_000,
-      activityLabel: "streaming",
-    }, 25_000);
-    snapshot = classifyStatus(resumed, 25_000);
-    assert.equal(snapshot.kind, "active");
-    assert.equal(resumed.activeScope, "streaming");
   });
 
   it("normalizes and truncates long newline-heavy names", () => {
@@ -1010,7 +927,7 @@ describe("subagent discovery", () => {
       testApi.resolveEffectiveInteractive({ name: "A", task: "T" }, {}),
       true,
     );
-    // Bare spawn with no agent defs (e.g. /iterate fork) is interactive by default.
+    // Bare spawn with no agent defs is interactive by default.
     assert.equal(
       testApi.resolveEffectiveInteractive({ name: "A", task: "T" }, null),
       true,
@@ -1177,7 +1094,7 @@ describe("subagent discovery", () => {
   it("buildSubagentToolAllowlist preserves requested tools and adds child control tools", () => {
     assert.equal(
       testApi.buildSubagentToolAllowlist("read,bash,web_search"),
-      "read,bash,web_search,caller_ping,subagent_done",
+      "read,bash,web_search,subagent_done",
     );
   });
 
@@ -1392,17 +1309,6 @@ describe("subagent-done.ts", () => {
 describe("tmux.ts interpretExitSidecar", () => {
   const { interpretExitSidecar } = __pollForExitTest__;
 
-  it("decodes ping payloads", () => {
-    assert.deepEqual(
-      interpretExitSidecar({ type: "ping", name: "Worker", message: "need help" }),
-      {
-        reason: "ping",
-        exitCode: 0,
-        ping: { name: "Worker", message: "need help" },
-      },
-    );
-  });
-
   it("decodes done payloads", () => {
     assert.deepEqual(interpretExitSidecar({ type: "done" }), {
       reason: "done",
@@ -1468,21 +1374,6 @@ describe("commands", () => {
 
     assert.deepEqual(notifications, [{ message: "Usage: /ship-auto <what to build>", level: "warning" }]);
     assert.deepEqual(sentUserMessages, []);
-  });
-
-  it("/iterate always emits a full-context fork tool call", () => {
-    const { api, registeredCommands, sentUserMessages } = createMockExtensionApi();
-
-    (subagentsModule as any).default(api);
-
-    const iterate = registeredCommands.find((command) => command.name === "iterate");
-    assert.ok(iterate, "expected /iterate to be registered");
-
-    iterate.handler("Fix the bug", {});
-
-    assert.equal(sentUserMessages.length, 1);
-    assert.match(sentUserMessages[0], /fork: true/);
-    assert.match(sentUserMessages[0], /name: "Iterate"/);
   });
 
   it("registers /branch without sending a user message", () => {
@@ -1636,26 +1527,11 @@ describe("commands", () => {
 });
 
 describe("tool registration", () => {
-  it("defaults resumed subagents to auto-exit and non-interactive tracking", () => {
-    const testApi = (subagentsModule as any).__test__;
-
-    assert.deepEqual(testApi.resolveResumeLaunchBehavior({}), {
-      autoExit: true,
-      interactive: false,
-    });
-    assert.deepEqual(testApi.resolveResumeLaunchBehavior({ autoExit: false }), {
-      autoExit: false,
-      interactive: true,
-    });
-  });
-
-  it("expands spawning false to deny subagent interruption", () => {
-    const testApi = (subagentsModule as any).__test__;
-    const denied = testApi.resolveDenyTools({ spawning: false });
-
-    assert.equal(denied.has("subagent"), true);
-    assert.equal(denied.has("subagent_interrupt"), true);
-    assert.equal(denied.has("subagent_resume"), true);
+  it("exposes only the workflow tools and commands", () => {
+    const { api, registeredTools, registeredCommands } = createMockExtensionApi();
+    (subagentsModule as any).default(api);
+    assert.deepEqual(registeredTools.map((tool) => tool.name).sort(), ["subagent", "subagents_list", "todo"].sort());
+    assert.deepEqual(registeredCommands.map((command) => command.name).sort(), ["branch", "ship", "ship-auto"].sort());
   });
 
   it("renders partial subagent tool-call args without throwing", () => {
@@ -1679,17 +1555,7 @@ describe("tool registration", () => {
     assert.match(output, /\(unnamed\)/);
   });
 
-  it("registers subagent_resume with an autoExit override", () => {
-    const { api, registeredTools } = createMockExtensionApi();
-    (subagentsModule as any).default(api);
 
-    const resumeTool = registeredTools.find((tool) => tool.name === "subagent_resume");
-    assert.ok(resumeTool, "expected subagent_resume tool to be registered");
-
-    const autoExitSchema = resumeTool.parameters.properties.autoExit;
-    assert.equal(autoExitSchema.type, "boolean");
-    assert.match(autoExitSchema.description, /Defaults to true/);
-  });
 });
 
 describe("subagent activity snapshots", () => {
@@ -1864,264 +1730,7 @@ describe("subagent activity snapshots", () => {
   });
 });
 
-describe("subagent interruption", () => {
-  function makeRunning(overrides: Record<string, unknown> = {}) {
-    return {
-      id: "a1",
-      name: "Worker",
-      task: "",
-      surface: "pane-1",
-      startTime: 0,
-      sessionFile: "worker.jsonl",
-      interactive: false,
-      statusState: createStatusState({ source: "pi", startTimeMs: 0 }),
-      ...overrides,
-    };
-  }
-
-  it("registers subagent_interrupt in the main session extension", () => {
-    const { api, registeredTools } = createMockExtensionApi();
-
-    (subagentsModule as any).default(api);
-
-    assert.equal(registeredTools.some((tool) => tool.name === "subagent_interrupt"), true);
-  });
-
-  it("resolves interrupt targets by exact id and reports name ambiguity", () => {
-    const testApi = (subagentsModule as any).__test__;
-    const runningMap = testApi.runningSubagents as Map<string, any>;
-    runningMap.clear();
-
-    try {
-      runningMap.set("a1", makeRunning({ id: "a1", name: "Worker", surface: "a1", sessionFile: "a1.jsonl" }));
-      runningMap.set("b2", makeRunning({ id: "b2", name: "Worker", surface: "b2", sessionFile: "b2.jsonl" }));
-      runningMap.set("c3", makeRunning({ id: "c3", name: "Scout", surface: "c3", sessionFile: "c3.jsonl" }));
-
-      const byId = testApi.resolveInterruptTarget({ id: "c3", name: "Worker" });
-      assert.equal(byId.running.id, "c3");
-
-      const ambiguous = testApi.resolveInterruptTarget({ name: "Worker" });
-      assert.match(ambiguous.error, /Ambiguous subagent name/);
-    } finally {
-      runningMap.clear();
-    }
-  });
-
-  it("returns an explicit error when Escape delivery fails", () => {
-    const testApi = (subagentsModule as any).__test__;
-    let aborted = false;
-    const running = makeRunning({
-      abortController: {
-        abort() {
-          aborted = true;
-        },
-      },
-    });
-
-    const result = testApi.requestSubagentInterrupt(running, () => {
-      throw new Error("mux write failed");
-    });
-
-    assert.match(result.error, /Failed to send Escape/);
-    assert.equal(aborted, false);
-    assert.equal("interruptRequested" in running, false);
-  });
-
-  it("leaves status unchanged when Escape delivery fails in the tool path", () => {
-    const testApi = (subagentsModule as any).__test__;
-    const runningMap = testApi.runningSubagents as Map<string, any>;
-    runningMap.clear();
-
-    const activeState = observeStatus(
-      createStatusState({ source: "pi", startTimeMs: 0 }),
-      {
-        snapshot: "present",
-        updatedAt: 5_000,
-        sequence: 1,
-        phase: "active",
-        active: true,
-        activeScope: "tool",
-        activeSince: 5_000,
-        activityLabel: "bash",
-      },
-      5_000,
-    );
-
-    try {
-      runningMap.set("a1", makeRunning({ statusState: activeState }));
-
-      const result = withMockedNow(20_000, () => testApi.handleSubagentInterrupt({ name: "Worker" }, () => {
-        throw new Error("mux write failed");
-      }));
-
-      assert.match(result.content[0].text, /Failed to send Escape/);
-      assert.equal(classifyStatus(runningMap.get("a1").statusState, 20_000).kind, "active");
-    } finally {
-      runningMap.clear();
-    }
-  });
-
-  it("sends Escape without aborting or mutating running state", () => {
-    const testApi = (subagentsModule as any).__test__;
-    let aborted = false;
-    let sentSurface = "";
-    const running = makeRunning({
-      abortController: {
-        abort() {
-          aborted = true;
-        },
-      },
-    });
-
-    const result = testApi.requestSubagentInterrupt(running, (surface: string) => {
-      sentSurface = surface;
-    });
-
-    assert.deepEqual(result, { ok: true });
-    assert.equal(sentSurface, "pane-1");
-    assert.equal(aborted, false);
-    assert.equal("interruptRequested" in running, false);
-  });
-
-  it("refreshes the latest activity snapshot before forcing local interrupt waiting", () => {
-    const testApi = (subagentsModule as any).__test__;
-    const runningMap = testApi.runningSubagents as Map<string, any>;
-    let sentSurface = "";
-    runningMap.clear();
-
-    withTempDir((dir) => {
-      mkdirSync(join(dir, "subagent-activity"), { recursive: true });
-      const activityFile = getSubagentActivityFile(dir, "a1");
-      const activity = {
-        version: 1,
-        runningChildId: "a1",
-        createdAt: 1_000,
-        updatedAt: 19_000,
-        sequence: 7,
-        latestEvent: "tool_execution_start",
-        phase: "active",
-        agentActive: true,
-        turnActive: true,
-        providerActive: false,
-        toolActive: true,
-        activeScope: "tool",
-        activeSince: 19_000,
-        toolName: "bash",
-      };
-      writeFileSync(activityFile, `${JSON.stringify(activity)}\n`);
-
-      try {
-        runningMap.set("a1", makeRunning({
-          activityFile,
-          statusState: createStatusState({ source: "pi", startTimeMs: 0 }),
-        }));
-
-        withMockedNow(20_000, () => testApi.handleSubagentInterrupt({ name: "Worker" }, (surface: string) => {
-          sentSurface = surface;
-        }));
-
-        assert.equal(sentSurface, "pane-1");
-        const state = runningMap.get("a1").statusState;
-        const snapshot = classifyStatus(state, 20_000);
-        assert.equal(snapshot.kind, "waiting");
-        assert.equal(snapshot.activityLabel, "interrupted");
-        assert.equal(state.lastActivityAtMs, 20_000);
-        assert.equal(state.lastActivitySequence, 7);
-        assert.equal(state.localOverrideSequence, 7);
-      } finally {
-        runningMap.clear();
-      }
-    });
-  });
-
-  it("acknowledges Pi-backed interrupt requests and forces local status waiting", () => {
-    const testApi = (subagentsModule as any).__test__;
-    const runningMap = testApi.runningSubagents as Map<string, any>;
-    let sentSurface = "";
-    runningMap.clear();
-
-    const activeState = observeStatus(
-      createStatusState({ source: "pi", startTimeMs: 0 }),
-      {
-        snapshot: "present",
-        updatedAt: 5_000,
-        sequence: 1,
-        phase: "active",
-        active: true,
-        activeScope: "tool",
-        activeSince: 5_000,
-        activityLabel: "bash",
-      },
-      5_000,
-    );
-
-    try {
-      runningMap.set("a1", makeRunning({ statusState: activeState }));
-
-      const result = withMockedNow(20_000, () => testApi.handleSubagentInterrupt({ name: "Worker" }, (surface: string) => {
-        sentSurface = surface;
-      }));
-
-      assert.equal(sentSurface, "pane-1");
-      assert.equal(result.content[0].text, 'Interrupt requested for subagent "Worker".');
-      assert.deepEqual(result.details, { id: "a1", name: "Worker", status: "interrupt_requested" });
-      const snapshot = classifyStatus(runningMap.get("a1").statusState, 20_000);
-      assert.equal(snapshot.kind, "waiting");
-      assert.equal(snapshot.activityLabel, "interrupted");
-      assert.equal(runningMap.has("a1"), true);
-    } finally {
-      runningMap.clear();
-    }
-  });
-
-  it("sends Escape again for repeated interrupt requests", () => {
-    const testApi = (subagentsModule as any).__test__;
-    const runningMap = testApi.runningSubagents as Map<string, any>;
-    const surfaces: string[] = [];
-    runningMap.clear();
-
-    try {
-      runningMap.set("a1", makeRunning());
-
-      testApi.handleSubagentInterrupt({ name: "Worker" }, (surface: string) => {
-        surfaces.push(surface);
-      });
-      testApi.handleSubagentInterrupt({ name: "Worker" }, (surface: string) => {
-        surfaces.push(surface);
-      });
-
-      assert.deepEqual(surfaces, ["pane-1", "pane-1"]);
-      assert.equal(runningMap.has("a1"), true);
-    } finally {
-      runningMap.clear();
-    }
-  });
-
-  it("rejects Claude-backed interrupt requests before delivery", () => {
-    const testApi = (subagentsModule as any).__test__;
-    const runningMap = testApi.runningSubagents as Map<string, any>;
-    let delivered = false;
-    runningMap.clear();
-
-    try {
-      runningMap.set("a1", makeRunning({ cli: "claude" }));
-
-      const result = testApi.handleSubagentInterrupt({ name: "Worker" }, () => {
-        delivered = true;
-      });
-
-      assert.equal(delivered, false);
-      assert.match(result.content[0].text, /currently supported only for Pi-backed subagents/i);
-      assert.deepEqual(result.details, {
-        error: "claude interrupt unsupported",
-        id: "a1",
-        name: "Worker",
-      });
-    } finally {
-      runningMap.clear();
-    }
-  });
-
+describe("subagent result presentation", () => {
   it("formats exit code 130 as an ordinary failure", () => {
     const testApi = (subagentsModule as any).__test__;
     const presentation = testApi.resolveResultPresentation(
@@ -2136,7 +1745,7 @@ describe("subagent interruption", () => {
 
     assert.match(presentation, /failed \(exit code 130\)/);
     assert.doesNotMatch(presentation, /interrupted/);
-    assert.match(presentation, /Resume: pi --session/);
+    assert.match(presentation, /Resume manually: pi --session/);
   });
 
   it("renders a clear provider/agent error when errorMessage is set", () => {
@@ -2160,8 +1769,8 @@ describe("subagent interruption", () => {
     assert.match(presentation, /Sub-agent "Worker" failed/);
     assert.match(presentation, /provider\/agent error — auto-retry exhausted/);
     assert.match(presentation, /Error: Anthropic 529 Overloaded after 3 retries/);
-    assert.match(presentation, /subagent_resume/);
-    assert.match(presentation, /Resume: pi --session/);
+    assert.match(presentation, /Retry by spawning a new subagent/);
+    assert.match(presentation, /Resume manually: pi --session/);
     assert.doesNotMatch(presentation, /ignored when errorMessage is present/);
   });
 });

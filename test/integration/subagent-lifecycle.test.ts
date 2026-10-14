@@ -239,38 +239,6 @@ describe("subagent-lifecycle [tmux]", { timeout: PI_TIMEOUT * 3, skip: !isTmuxSe
       }
     });
 
-    // ── caller_ping ──
-
-    it("subagent caller_ping sends notification back to the parent", async () => {
-      const id = uniqueId();
-
-      const surface = createTrackedSurface(env, `ping-${id}`);
-      await sleep(1000);
-
-      const task = [
-        `Call the subagent tool with these EXACT parameters:`,
-        `  name: "Ping-${id}"`,
-        `  agent: "test-ping"`,
-        `  task: "PING_TEST_${id}"`,
-        `Just call the subagent tool once. Do not do anything else before calling it.`,
-      ].join("\n");
-
-      startPi(surface, env.dir, task);
-
-      // The test-ping agent calls caller_ping, which steers a "needs help" message
-      // back to the outer pi. Look for it on screen.
-      const screen = await waitForScreen(
-        surface,
-        /needs help|PING|caller_ping|ping/i,
-        PI_TIMEOUT,
-      );
-
-      assert.ok(
-        /needs help|PING/i.test(screen),
-        `Screen should show ping notification. Got:\n${screen.slice(-800)}`,
-      );
-    });
-
     // ── Agent discovery ──
 
     it("subagent discovers project-local test agents", async () => {

@@ -46,8 +46,6 @@ export interface SubagentStatusState {
   firstObservationAtMs: number | null;
   lastActivityAtMs: number | null;
   lastActivitySequence: number | null;
-  localOverrideAtMs: number | null;
-  localOverrideSequence: number | null;
   activeNow: boolean;
   activeSinceMs: number | null;
   activeScope: string | null;
@@ -209,8 +207,6 @@ export function createStatusState(params: {
     firstObservationAtMs: null,
     lastActivityAtMs: null,
     lastActivitySequence: null,
-    localOverrideAtMs: null,
-    localOverrideSequence: null,
     activeNow: false,
     activeSinceMs: null,
     activeScope: null,
@@ -252,12 +248,6 @@ export function observeStatus(
   );
   if (olderThanLastActivity) return state;
 
-  const blockedByLocalOverride = state.localOverrideAtMs != null && (
-    updatedAt < state.localOverrideAtMs ||
-    (updatedAt === state.localOverrideAtMs && state.localOverrideSequence != null && sequence <= state.localOverrideSequence)
-  );
-  if (blockedByLocalOverride) return state;
-
   const phase = observation.phase;
   const activeNow = phase === "active" || observation.active === true;
   const activeSinceMs = activeNow
@@ -282,31 +272,6 @@ export function observeStatus(
     snapshotState: "present",
     snapshotProblemSinceMs: null,
     snapshotError: null,
-    localOverrideAtMs: null,
-    localOverrideSequence: null,
-  };
-}
-
-export function forceStatusAfterInterrupt(state: SubagentStatusState, now: number): SubagentStatusState {
-  if (state.source === "claude") return state;
-
-  return {
-    ...state,
-    firstObservationAtMs: state.firstObservationAtMs ?? now,
-    lastActivityAtMs: now,
-    localOverrideAtMs: now,
-    localOverrideSequence: state.lastActivitySequence,
-    activeNow: false,
-    activeSinceMs: null,
-    activeScope: null,
-    waitingSinceMs: now,
-    phase: "waiting",
-    latestEvent: "interrupt_requested",
-    activityLabel: "interrupted",
-    snapshotState: "present",
-    snapshotProblemSinceMs: null,
-    snapshotError: null,
-    currentKind: "waiting",
   };
 }
 
