@@ -87,15 +87,23 @@ This is intentionally breaking: selector-less calls fail. Legacy `.pi/todos.json
 
 ### Bundled Agents
 
-| Agent             | Model                | Role                                                                                     |
-| ----------------- | -------------------- | ---------------------------------------------------------------------------------------- |
-| **planner**       | GPT-5.6 Sol (medium) | Brainstorming — clarifies requirements, explores approaches, writes plans, creates todos |
-| **planner-auto**  | GPT-5.6 Sol (medium) | Autonomous planning — records assumptions, writes plans, creates executable todos        |
-| **scout**         | GPT-5.6 Luna         | Fast codebase reconnaissance — maps files, patterns, conventions                         |
-| **worker**        | GPT-5.6 Terra        | Implements tasks from todos — writes code, runs tests, makes polished commits            |
-| **reviewer**      | GPT-5.6 Sol (medium) | Reviews code for bugs, security issues, correctness                                      |
+| Agent             | Role                                                                                     |
+| ----------------- | ---------------------------------------------------------------------------------------- |
+| **planner**       | Brainstorming — clarifies requirements, explores approaches, writes plans, creates todos |
+| **planner-auto**  | Autonomous planning — records assumptions, writes plans, creates executable todos        |
+| **scout**         | Fast codebase reconnaissance — maps files, patterns, conventions                         |
+| **worker**        | Implements tasks from todos — writes code, runs tests, makes polished commits            |
+| **reviewer**      | Reviews code for bugs, security issues, correctness                                      |
 
 Agent discovery follows priority: **project-local** (`.pi/agents/`) > **global** (`~/.pi/agent/agents/`) > **package-bundled**. Override any bundled agent, including `planner-auto`, by placing your own version in the higher-priority location.
+
+Bundled agents use pi's default model unless you set a per-machine override in `~/.pi/agent/subagent-models.json` (or `$PI_CODING_AGENT_DIR/subagent-models.json`):
+
+```json
+{"scout":"openai-codex/gpt-5.4-mini","worker":"openai-codex/gpt-5.4-mini","planner-auto":"openai-codex/gpt-5.4-mini","reviewer":"openai-codex/gpt-5.4-mini"}
+```
+
+Add `planner` if you use interactive planning. These overrides take precedence over agent frontmatter; an explicit `subagent({ model: "..." })` takes precedence over both. Use model IDs available on each machine; no config file is required.
 
 ---
 

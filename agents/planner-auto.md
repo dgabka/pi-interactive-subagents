@@ -1,7 +1,6 @@
 ---
 name: planner-auto
 description: Autonomous planning agent - turns a task and scout context into a plan and executable todos without user interaction
-model: openai-codex/gpt-5.6-sol
 thinking: medium
 tools: read, bash, write, todo
 spawning: false

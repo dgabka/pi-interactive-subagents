@@ -254,8 +254,20 @@ function parseAgentDefinition(content: string, fallbackName: string): AgentDefin
   };
 }
 
+function loadAgentModels(): Record<string, string> {
+  const path = join(getAgentConfigDir(), "subagent-models.json");
+  if (!existsSync(path)) return {};
+  const models: unknown = JSON.parse(readFileSync(path, "utf8"));
+  if (!models || typeof models !== "object" || Array.isArray(models) ||
+      Object.values(models).some((model) => typeof model !== "string" || !model.trim())) {
+    throw new Error(`${path} must map agent names to non-empty model strings`);
+  }
+  return models as Record<string, string>;
+}
+
 function discoverAgentDefinitions(): ListedAgentDefinition[] {
   const agents = new Map<string, ListedAgentDefinition>();
+  const models = loadAgentModels();
   const dirs: Array<{ path: string; source: AgentSource }> = [
     { path: getBundledAgentsDir(), source: "package" },
     { path: join(getAgentConfigDir(), "agents"), source: "global" },
@@ -270,7 +282,7 @@ function discoverAgentDefinitions(): ListedAgentDefinition[] {
         file.replace(/\.md$/, ""),
       );
       if (!parsed) continue;
-      agents.set(parsed.name, { ...parsed, source });
+      agents.set(parsed.name, { ...parsed, source, model: models[parsed.name] ?? parsed.model });
     }
   }
 
@@ -367,7 +379,7 @@ function loadAgentDefaults(agentName: string): AgentDefaults | null {
   for (const p of paths) {
     if (!existsSync(p)) continue;
     const parsed = parseAgentDefinition(readFileSync(p, "utf8"), agentName);
-    if (parsed) return parsed;
+    if (parsed) return { ...parsed, model: loadAgentModels()[parsed.name] ?? parsed.model };
   }
 
   return null;

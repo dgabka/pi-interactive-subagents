@@ -1073,6 +1073,24 @@ describe("subagent discovery", () => {
     );
   });
 
+  it("uses per-machine model overrides and defaults to the pi model", () => {
+    const dir = mkdtempSync(join(tmpdir(), "subagent-models-"));
+    const previous = process.env.PI_CODING_AGENT_DIR;
+    try {
+      process.env.PI_CODING_AGENT_DIR = dir;
+      assert.equal(testApi.loadAgentDefaults("worker")?.model, undefined);
+      writeFileSync(join(dir, "subagent-models.json"), JSON.stringify({ worker: "openai-codex/gpt-5.4-mini" }));
+      assert.equal(testApi.loadAgentDefaults("worker")?.model, "openai-codex/gpt-5.4-mini");
+      assert.equal(testApi.discoverAgentDefinitions().find((agent) => agent.name === "worker")?.model, "openai-codex/gpt-5.4-mini");
+      writeFileSync(join(dir, "subagent-models.json"), JSON.stringify({ worker: 123 }));
+      assert.throws(() => testApi.loadAgentDefaults("worker"), /must map agent names/);
+    } finally {
+      if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+      else process.env.PI_CODING_AGENT_DIR = previous;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("bundled artifact-producing roles can write their required outputs", () => {
     for (const name of ["scout", "reviewer"]) {
       const defs = testApi.loadAgentDefaults(name);
