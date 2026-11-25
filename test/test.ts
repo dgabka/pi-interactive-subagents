@@ -918,19 +918,19 @@ describe("subagent discovery", () => {
       testApi.resolveEffectiveInteractive({ name: "A", task: "T" }, { autoExit: true }),
       false,
     );
-    // Agents without auto-exit ARE interactive — parent does not receive status transition pings.
+    // Explicitly disabled auto-exit preserves interactive sessions.
     assert.equal(
       testApi.resolveEffectiveInteractive({ name: "A", task: "T" }, { autoExit: false }),
       true,
     );
     assert.equal(
       testApi.resolveEffectiveInteractive({ name: "A", task: "T" }, {}),
-      true,
+      false,
     );
-    // Bare spawn with no agent defs is interactive by default.
+    // Bare spawns are autonomous by default.
     assert.equal(
       testApi.resolveEffectiveInteractive({ name: "A", task: "T" }, null),
-      true,
+      false,
     );
   });
 

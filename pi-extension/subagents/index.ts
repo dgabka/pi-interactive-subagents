@@ -116,7 +116,7 @@ const SubagentParams = Type.Object({
   interactive: Type.Optional(
     Type.Boolean({
       description:
-        "Mark the subagent as interactive (long-running, user drives the conversation in its own pane). When true, the main session is not woken by status transitions (stalled/recovered) for this subagent. If omitted, falls back to the agent's `interactive` frontmatter, otherwise the inverse of `auto-exit` (agents that auto-exit are autonomous and get stall pings; agents that don't are interactive and stay quiet).",
+        "Mark the subagent as interactive (long-running, user drives the conversation in its own pane). When true, the main session is not woken by status transitions (stalled/recovered) for this subagent. If omitted, falls back to the agent's `interactive` frontmatter, otherwise the inverse of `auto-exit` (default true). Interactive agents stay open; autonomous agents auto-complete and get stall pings.",
     }),
   ),
   resumeSessionId: Type.Optional(
@@ -350,8 +350,8 @@ function resolveLaunchBehavior(
  *      woken on stall/recovery transitions. Agents that don't auto-exit are
  *      driven by the user in their own pane (planner) and stall pings are noise.
  *
- * When no agent defs exist, `autoExit` is undefined and the subagent
- * is treated as interactive.
+ * When no lifecycle is specified, the subagent is autonomous and auto-exits.
+ * The resolved interactive mode also controls the child completion lifecycle.
  */
 function resolveEffectiveInteractive(
   params: Static<typeof SubagentParams>,
@@ -359,7 +359,7 @@ function resolveEffectiveInteractive(
 ): boolean {
   if (params.interactive != null) return params.interactive;
   if (agentDefs?.interactive != null) return agentDefs.interactive;
-  return !(agentDefs?.autoExit ?? false);
+  return !(agentDefs?.autoExit ?? true);
 }
 
 function loadAgentDefaults(agentName: string): AgentDefaults | null {
@@ -998,10 +998,10 @@ async function launchSubagent(
   // Build the task message
   // Only full-context fork mode inherits prior conversation state.
   // Blank-session modes need the wrapper instructions and artifact-backed handoff.
-  const modeHint = agentDefs?.autoExit
+  const modeHint = !effectiveInteractive
     ? "Complete your task autonomously."
     : "Complete your task. When finished, call the subagent_done tool. The user can interact with you at any time.";
-  const summaryInstruction = agentDefs?.autoExit
+  const summaryInstruction = !effectiveInteractive
     ? "Your FINAL assistant message should summarize what you accomplished."
     : "Your FINAL assistant message (before calling subagent_done or before the user exits) should summarize what you accomplished.";
   const denySet = resolveDenyTools(agentDefs);
@@ -1140,9 +1140,7 @@ async function launchSubagent(
   if (params.agent) {
     envParts.push(`PI_SUBAGENT_AGENT=${shellEscape(params.agent)}`);
   }
-  if (agentDefs?.autoExit) {
-    envParts.push(`PI_SUBAGENT_AUTO_EXIT=1`);
-  }
+  envParts.push(`PI_SUBAGENT_AUTO_EXIT=${effectiveInteractive ? "0" : "1"}`);
   envParts.push(`PI_SUBAGENT_SESSION=${shellEscape(subagentSessionFile)}`);
   envParts.push(`PI_SUBAGENT_ID=${shellEscape(id)}`);
   envParts.push(`PI_SUBAGENT_ACTIVITY_FILE=${shellEscape(activityFile)}`);
